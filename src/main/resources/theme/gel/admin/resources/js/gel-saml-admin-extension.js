@@ -30,6 +30,8 @@
   var STANDARD_SAML_ATTRIBUTE_SET_KEY = "attributeConsumingServiceIndex";
   var DEFAULT_GEL_ATTRIBUTE_SET = "4";
   var DEFAULT_SPID_LEVEL = "L2";
+  var FIELD_SECTION_GENERAL = "general";
+  var FIELD_SECTION_EXTENSIONS = "extensions";
 
   var GEL_KEYS = {
     attributeSet: "gelAttributeSet",
@@ -62,6 +64,7 @@
     {
       type: "select",
       id: GEL_KEYS.attributeSet,
+      section: FIELD_SECTION_GENERAL,
       label: "GEL Attribute Set",
       helpText: "Se valorizzato, sovrascrive il campo SAML Attribute Consuming Service Index.",
       options: ATTRIBUTE_SET_OPTIONS
@@ -69,6 +72,7 @@
     {
       type: "select",
       id: GEL_KEYS.spidLevel,
+      section: FIELD_SECTION_GENERAL,
       label: "SPID Level",
       helpText: "Livello SPID richiesto da GEL.",
       options: SPID_LEVEL_OPTIONS
@@ -76,6 +80,7 @@
     {
       type: "text",
       id: GEL_KEYS.spNameQualifier,
+      section: FIELD_SECTION_GENERAL,
       label: "NameID SPNameQualifier",
       helpText: "Valore opzionale da valorizzare in samlp:NameIDPolicy@SPNameQualifier.",
       placeholder: "es. https://sp.example.it"
@@ -83,43 +88,50 @@
     {
       type: "toggle",
       id: GEL_KEYS.enableCie,
-      label: "Extension ENABLE_CIE",
+      section: FIELD_SECTION_EXTENSIONS,
+      label: "ENABLE_CIE",
       helpText: "Aggiunge l'estensione ENABLE_CIE con valore SI."
     },
     {
       type: "toggle",
       id: GEL_KEYS.enableCns,
-      label: "Extension CNS",
+      section: FIELD_SECTION_EXTENSIONS,
+      label: "CNS",
       helpText: "Aggiunge l'estensione CNS con valore SI."
     },
     {
       type: "toggle",
       id: GEL_KEYS.cieOnly,
-      label: "Extension CIEONLY",
+      section: FIELD_SECTION_EXTENSIONS,
+      label: "CIEONLY",
       helpText: "Aggiunge l'estensione CIEONLY con valore SI."
     },
     {
       type: "toggle",
       id: GEL_KEYS.eidas,
-      label: "Extension EIDAS",
+      section: FIELD_SECTION_EXTENSIONS,
+      label: "EIDAS",
       helpText: "Aggiunge l'estensione EIDAS con valore SI."
     },
     {
       type: "toggle",
       id: GEL_KEYS.usoProfessionale,
-      label: "Extension usoProfessionale",
+      section: FIELD_SECTION_EXTENSIONS,
+      label: "usoProfessionale",
       helpText: "Aggiunge l'estensione usoProfessionale con valore SI."
     },
     {
       type: "toggle",
       id: GEL_KEYS.usoProfessionaleGiuridico,
-      label: "Extension usoProfessionaleGiuridico",
+      section: FIELD_SECTION_EXTENSIONS,
+      label: "usoProfessionaleGiuridico",
       helpText: "Aggiunge l'estensione usoProfessionaleGiuridico con valore SI."
     },
     {
       type: "textarea",
       id: GEL_KEYS.customExtensions,
-      label: "Custom GEL Extensions",
+      section: FIELD_SECTION_EXTENSIONS,
+      label: "Custom Extensions",
       helpText: "Una estensione per riga nel formato TAG=VALORE.",
       placeholder: "CUSTOM=SI",
       rows: "5"
@@ -128,7 +140,7 @@
       type: "toggle",
       id: GEL_KEYS.logAuthnRequest,
       label: "Log AuthnRequest",
-      helpText: "Da usare solo per troubleshooting del PoC."
+      helpText: "Da usare solo in ambienti di test per debug."
     }
   ];
 
@@ -144,14 +156,14 @@
   var PANEL_TEMPLATE = [
     '<div class="gel-saml-panel__header">',
     '  <h2 class="gel-saml-panel__title">Configurazione GEL SAML</h2>',
-    '  <p class="gel-saml-panel__subtitle">Parametri aggiuntivi GEL per l\\\'Identity Provider <strong>{{alias}}</strong>.</p>',
+    '  <p class="gel-saml-panel__subtitle">Parametri aggiuntivi GEL per l\'Identity Provider <strong>{{alias}}</strong>.</p>',
     '</div>',
-    '<div class="pf-v5-c-form gel-saml-form" data-gel-form="true">',
+    '<div class="pf-c-form pf-m-horizontal gel-saml-form" data-gel-form="true">',
     '  {{fieldsMarkup}}',
-    '  <div class="pf-v5-c-form__group gel-saml-form__group gel-saml-form__group--actions">',
-    '    <div class="pf-v5-c-form__group-label gel-saml-form__label-wrapper"></div>',
-    '    <div class="pf-v5-c-form__group-control gel-saml-form__control gel-saml-actions">',
-    '      <button id="' + SAVE_BUTTON_ID + '" type="button" class="pf-v5-c-button pf-m-primary gel-saml-button">Salva parametri GEL</button>',
+    '  <div class="pf-c-form__group gel-saml-form__group gel-saml-form__group--actions">',
+    '    <div class="pf-c-form__group-label gel-saml-form__label-wrapper"></div>',
+    '    <div class="pf-c-form__group-control gel-saml-form__control gel-saml-actions">',
+    '      <button id="' + SAVE_BUTTON_ID + '" type="button" class="pf-c-button pf-m-primary gel-saml-button">Salva parametri GEL</button>',
     '      <span id="' + STATUS_ID + '" class="gel-saml-status" role="status" aria-live="polite"></span>',
     '    </div>',
     '  </div>',
@@ -159,40 +171,51 @@
   ].join("");
 
   var FORM_GROUP_TEMPLATE = [
-    '<div class="pf-v5-c-form__group gel-saml-form__group">',
-    '  <div class="pf-v5-c-form__group-label gel-saml-form__label-wrapper">',
-    '    <label class="pf-v5-c-form__label gel-saml-form__label" for="{{inputId}}">',
-    '      <span class="pf-v5-c-form__label-text">{{label}}</span>',
+    '<div class="pf-c-form__group gel-saml-form__group">',
+    '  <div class="pf-c-form__group-label gel-saml-form__label-wrapper">',
+    '    <label class="pf-c-form__label gel-saml-form__label" for="{{inputId}}">',
+    '      <span class="pf-c-form__label-text">{{label}}</span>',
     '    </label>',
     '  </div>',
-    '  <div class="pf-v5-c-form__group-control gel-saml-form__control">',
+    '  <div class="pf-c-form__group-control gel-saml-form__control">',
     '    {{controlMarkup}}',
     '    {{helpMarkup}}',
     '  </div>',
     '</div>'
   ].join("");
 
+  var SECTION_TEMPLATE = [
+    '<section class="gel-saml-section">',
+    '  <h1 class="gel-saml-section__title">{{title}}</h1>',
+    '  {{contentMarkup}}',
+    '</section>'
+  ].join("");
+
   var SELECT_TEMPLATE = [
-    '<select id="{{id}}" class="pf-v5-c-form-control gel-saml-input">',
+    '<select id="{{id}}" class="pf-c-form-control gel-saml-input">',
     '  {{optionsMarkup}}',
     '</select>'
   ].join("");
 
   var SELECT_OPTION_TEMPLATE = '<option value="{{value}}">{{label}}</option>';
-  var INPUT_TEMPLATE = '<input id="{{id}}" type="text" class="pf-v5-c-form-control gel-saml-input" placeholder="{{placeholder}}" />';
-  var TEXTAREA_TEMPLATE = '<textarea id="{{id}}" class="pf-v5-c-form-control gel-saml-input gel-saml-textarea" rows="{{rows}}" placeholder="{{placeholder}}"></textarea>';
-  var HELP_TEXT_TEMPLATE = '<div class="pf-v5-c-form__helper-text gel-saml-form__helper-text">{{helpText}}</div>';
+  var INPUT_TEMPLATE = '<input id="{{id}}" type="text" class="pf-c-form-control gel-saml-input" placeholder="{{placeholder}}" />';
+  var TEXTAREA_TEMPLATE = '<textarea id="{{id}}" class="pf-c-form-control gel-saml-input gel-saml-textarea" rows="{{rows}}" placeholder="{{placeholder}}"></textarea>';
+  var HELP_TEXT_TEMPLATE = '<div class="pf-c-form__helper-text gel-saml-form__helper-text">{{helpText}}</div>';
   var TOGGLE_TEMPLATE = [
     '<div class="gel-saml-toggle" data-gel-toggle="{{id}}" role="group" aria-label="{{label}}">',
     '  <input id="{{id}}" type="hidden" value="false" />',
-    '  <button type="button" class="pf-v5-c-button pf-m-secondary gel-saml-toggle__button" data-gel-toggle-value="true">On</button>',
-    '  <button type="button" class="pf-v5-c-button pf-m-secondary gel-saml-toggle__button" data-gel-toggle-value="false">Off</button>',
+    '  <button type="button" class="pf-c-button pf-m-secondary gel-saml-toggle__button" data-gel-toggle-value="true">On</button>',
+    '  <button type="button" class="pf-c-button pf-m-secondary gel-saml-toggle__button" data-gel-toggle-value="false">Off</button>',
     '</div>'
   ].join("");
 
   var TOKEN_PATTERN = /^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/;
 
   var capturedToken = null;
+  var capturedRefreshToken = null;
+  var capturedClientId = null;
+  var capturedIssuer = null;
+  var capturedKeycloak = null;
   var currentRouteKey = null;
   var observedTokenVersion = 0;
 
@@ -520,7 +543,31 @@
   }
 
   function buildFieldGroupsMarkup() {
-    return FIELD_DEFINITIONS.map(function (field) {
+    var baseFields = FIELD_DEFINITIONS.filter(function (field) {
+      return field.section === FIELD_SECTION_GENERAL || !field.section;
+    });
+
+    var extensionFields = FIELD_DEFINITIONS.filter(function (field) {
+      return field.section === FIELD_SECTION_EXTENSIONS;
+    });
+
+    var markup = TEMPLATE_ENGINE.render(SECTION_TEMPLATE, {
+      title: "General Params",
+      contentMarkup: renderFieldGroups(baseFields)
+    });
+
+    if (extensionFields.length) {
+      markup += TEMPLATE_ENGINE.render(SECTION_TEMPLATE, {
+        title: "Extensions",
+        contentMarkup: renderFieldGroups(extensionFields)
+      });
+    }
+
+    return markup;
+  }
+
+  function renderFieldGroups(fields) {
+    return (fields || []).map(function (field) {
       return TEMPLATE_ENGINE.render(FORM_GROUP_TEMPLATE, {
         inputId: escapeHtml(field.id),
         label: escapeHtml(field.label),
@@ -1040,7 +1087,7 @@
     options.credentials = "include";
 
     var headers = new Headers(options.headers || {});
-    var token = resolveAccessToken();
+    var token = await resolveValidAccessToken();
     if (!token) {
       token = await waitForAccessToken(1500);
     }
@@ -1058,7 +1105,10 @@
     // Retry once after observing a newer bearer token from native console traffic.
     var previousObservedTokenVersion = observedTokenVersion;
     capturedToken = null;
-    var refreshedToken = await waitForObservedTokenRefresh(previousObservedTokenVersion, 4000);
+    var refreshedToken = await refreshAccessTokenIfPossible();
+    if (!refreshedToken) {
+      refreshedToken = await waitForObservedTokenRefresh(previousObservedTokenVersion, 4000);
+    }
     if (!refreshedToken) {
       refreshedToken = await waitForAccessToken(1500);
     }
@@ -1072,14 +1122,38 @@
     return window.fetch(url, options);
   }
 
+  async function resolveValidAccessToken() {
+    var token = resolveAccessToken();
+    if (!token) {
+      return null;
+    }
+
+    // Proactively refresh if the token is near expiration to avoid 401 on save.
+    if (!isTokenNearExpiry(token, 20)) {
+      return token;
+    }
+
+    var refreshedToken = await refreshAccessTokenIfPossible();
+    return refreshedToken || token;
+  }
+
   function resolveAccessToken() {
+    var keycloakToken = extractTokenFromKeycloak(resolveKeycloakInstance());
+    if (keycloakToken) {
+      rememberObservedToken(keycloakToken);
+      return keycloakToken;
+    }
+
     if (capturedToken) {
       return capturedToken;
     }
 
-    var discoveredToken = discoverTokenFromStorage();
-    if (discoveredToken) {
-      return discoveredToken;
+    var authContext = discoverAuthContextFromStorage();
+    if (authContext) {
+      hydrateCapturedAuthContext(authContext);
+      if (authContext.accessToken) {
+        return authContext.accessToken;
+      }
     }
 
     return capturedToken;
@@ -1296,6 +1370,7 @@
       observedTokenVersion += 1;
     }
     capturedToken = token;
+    hydrateCapturedAuthContext(resolveAuthContextFromToken(token));
   }
 
   async function waitForObservedTokenRefresh(previousVersion, timeoutMs) {
@@ -1346,7 +1421,84 @@
     return null;
   }
 
-  function discoverTokenFromStorage() {
+  async function refreshAccessTokenIfPossible() {
+    var keycloakToken = await refreshUsingKeycloakInstance();
+    if (keycloakToken) {
+      return keycloakToken;
+    }
+
+    var refreshToken = resolveRefreshToken();
+    if (!refreshToken) {
+      return null;
+    }
+
+    var token = resolveAccessToken();
+    var tokenContext = resolveAuthContextFromToken(token);
+    var issuer = capturedIssuer || tokenContext.issuer;
+    var clientId = capturedClientId || tokenContext.clientId || "security-admin-console";
+    if (!issuer) {
+      return null;
+    }
+
+    var tokenEndpoint = trimTrailingSlash(issuer) + "/protocol/openid-connect/token";
+    var body = new URLSearchParams();
+    body.set("grant_type", "refresh_token");
+    body.set("client_id", clientId);
+    body.set("refresh_token", refreshToken);
+
+    try {
+      var response = await window.fetch(tokenEndpoint, {
+        method: "POST",
+        credentials: "include",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+          "Accept": "application/json"
+        },
+        body: body.toString()
+      });
+
+      if (!response.ok) {
+        return null;
+      }
+
+      var payload = await response.json();
+      if (!payload || !TOKEN_PATTERN.test(String(payload.access_token || ""))) {
+        return null;
+      }
+
+      rememberObservedToken(payload.access_token);
+      if (payload.refresh_token && TOKEN_PATTERN.test(String(payload.refresh_token))) {
+        capturedRefreshToken = payload.refresh_token;
+      }
+
+      if (payload.iss && typeof payload.iss === "string") {
+        capturedIssuer = payload.iss;
+      }
+      if (payload.client_id && typeof payload.client_id === "string") {
+        capturedClientId = payload.client_id;
+      }
+
+      return payload.access_token;
+    } catch (error) {
+      return null;
+    }
+  }
+
+  function resolveRefreshToken() {
+    if (capturedRefreshToken && TOKEN_PATTERN.test(String(capturedRefreshToken))) {
+      return capturedRefreshToken;
+    }
+
+    var authContext = discoverAuthContextFromStorage();
+    if (!authContext || !authContext.refreshToken) {
+      return null;
+    }
+
+    hydrateCapturedAuthContext(authContext);
+    return capturedRefreshToken;
+  }
+
+  function discoverAuthContextFromStorage() {
     var storages = [safeStorage(window.localStorage), safeStorage(window.sessionStorage)];
 
     for (var i = 0; i < storages.length; i++) {
@@ -1362,14 +1514,171 @@
         }
 
         var rawValue = storage.getItem(key);
-        var token = findTokenInValue(rawValue);
-        if (token) {
-          return token;
+        var authContext = findAuthContextInValue(rawValue);
+        if (authContext && (authContext.accessToken || authContext.refreshToken)) {
+          return authContext;
         }
       }
     }
 
     return null;
+  }
+
+  async function refreshUsingKeycloakInstance() {
+    var keycloak = resolveKeycloakInstance();
+    if (!keycloak || typeof keycloak.updateToken !== "function") {
+      return null;
+    }
+
+    try {
+      await keycloak.updateToken(20);
+      var token = extractTokenFromKeycloak(keycloak);
+      if (!token) {
+        return null;
+      }
+
+      rememberObservedToken(token);
+      if (TOKEN_PATTERN.test(String(keycloak.refreshToken || ""))) {
+        capturedRefreshToken = String(keycloak.refreshToken);
+      }
+      return token;
+    } catch (error) {
+      return null;
+    }
+  }
+
+  function resolveKeycloakInstance() {
+    if (isKeycloakCandidate(capturedKeycloak)) {
+      return capturedKeycloak;
+    }
+
+    var windowCandidate = findKeycloakInWindow();
+    if (isKeycloakCandidate(windowCandidate)) {
+      capturedKeycloak = windowCandidate;
+      return capturedKeycloak;
+    }
+
+    var reactCandidate = findKeycloakInReactFiberTree();
+    if (isKeycloakCandidate(reactCandidate)) {
+      capturedKeycloak = reactCandidate;
+      return capturedKeycloak;
+    }
+
+    return null;
+  }
+
+  function extractTokenFromKeycloak(keycloak) {
+    if (!isKeycloakCandidate(keycloak)) {
+      return null;
+    }
+
+    var token = String(keycloak.token || "").trim();
+    return TOKEN_PATTERN.test(token) ? token : null;
+  }
+
+  function findKeycloakInWindow() {
+    var candidates = [
+      window.keycloak,
+      window.kc,
+      window.__keycloak,
+      window.Keycloak
+    ];
+
+    for (var i = 0; i < candidates.length; i++) {
+      if (isKeycloakCandidate(candidates[i])) {
+        return candidates[i];
+      }
+    }
+
+    return null;
+  }
+
+  function findKeycloakInReactFiberTree() {
+    var rootFiber = findReactRootFiber();
+    if (!rootFiber) {
+      return null;
+    }
+
+    var queue = [rootFiber];
+    var visited = [];
+    var maxNodes = 12000;
+
+    while (queue.length > 0 && visited.length < maxNodes) {
+      var node = queue.shift();
+      if (!node || visited.indexOf(node) >= 0) {
+        continue;
+      }
+
+      visited.push(node);
+      var fromProps = readKeycloakFromValue(node.memoizedProps);
+      if (fromProps) {
+        return fromProps;
+      }
+
+      var fromState = readKeycloakFromValue(node.memoizedState);
+      if (fromState) {
+        return fromState;
+      }
+
+      if (node.child) {
+        queue.push(node.child);
+      }
+      if (node.sibling) {
+        queue.push(node.sibling);
+      }
+    }
+
+    return null;
+  }
+
+  function findReactRootFiber() {
+    var appRoot = document.getElementById("app");
+    if (!appRoot) {
+      return null;
+    }
+
+    var keys = Object.keys(appRoot);
+    for (var i = 0; i < keys.length; i++) {
+      var key = keys[i];
+      if (key.indexOf("__reactContainer$") !== 0 && key.indexOf("__reactFiber$") !== 0) {
+        continue;
+      }
+
+      var candidate = appRoot[key];
+      if (!candidate) {
+        continue;
+      }
+
+      if (candidate.current) {
+        return candidate.current;
+      }
+      return candidate;
+    }
+
+    return null;
+  }
+
+  function readKeycloakFromValue(value) {
+    if (!value) {
+      return null;
+    }
+
+    if (isKeycloakCandidate(value.keycloak)) {
+      return value.keycloak;
+    }
+
+    if (isKeycloakCandidate(value.value && value.value.keycloak)) {
+      return value.value.keycloak;
+    }
+
+    return null;
+  }
+
+  function isKeycloakCandidate(candidate) {
+    return Boolean(candidate)
+      && typeof candidate === "object"
+      && typeof candidate.updateToken === "function"
+      && typeof candidate.login === "function";
   }
 
   function safeStorage(storage) {
@@ -1384,13 +1693,13 @@
     return null;
   }
 
-  function findTokenInValue(rawValue) {
+  function findAuthContextInValue(rawValue) {
     if (!rawValue) {
       return null;
     }
 
     if (TOKEN_PATTERN.test(rawValue.trim())) {
-      return rawValue.trim();
+      return resolveAuthContextFromToken(rawValue.trim());
     }
 
     var parsed;
@@ -1400,10 +1709,10 @@
       return null;
     }
 
-    return findTokenInObject(parsed);
+    return findAuthContextInObject(parsed);
   }
 
-  function findTokenInObject(value) {
+  function findAuthContextInObject(value) {
     if (!value) {
       return null;
     }
@@ -1411,44 +1720,142 @@
     if (typeof value === "string") {
       var candidate = value.trim();
       if (TOKEN_PATTERN.test(candidate)) {
-        return candidate;
+        return resolveAuthContextFromToken(candidate);
       }
       return null;
     }
 
     if (Array.isArray(value)) {
       for (var i = 0; i < value.length; i++) {
-        var itemToken = findTokenInObject(value[i]);
-        if (itemToken) {
-          return itemToken;
+        var itemContext = findAuthContextInObject(value[i]);
+        if (itemContext && (itemContext.accessToken || itemContext.refreshToken)) {
+          return itemContext;
         }
       }
       return null;
     }
 
     if (typeof value === "object") {
-      var preferredKeys = ["token", "accessToken", "kcToken", "authToken"];
+      var accessToken = firstTokenValue(value, ["token", "accessToken", "kcToken", "authToken", "access_token"]);
+      var refreshToken = firstTokenValue(value, ["refreshToken", "kcRefreshToken", "refresh_token"]);
+      var clientId = firstStringValue(value, ["clientId", "client_id", "azp"]);
+      var issuer = firstStringValue(value, ["issuer", "iss", "authServerUrl"]);
 
-      for (var j = 0; j < preferredKeys.length; j++) {
-        var prefKey = preferredKeys[j];
-        if (Object.prototype.hasOwnProperty.call(value, prefKey)) {
-          var preferredToken = findTokenInObject(value[prefKey]);
-          if (preferredToken) {
-            return preferredToken;
-          }
-        }
+      if (accessToken || refreshToken) {
+        var contextFromToken = resolveAuthContextFromToken(accessToken);
+        return {
+          accessToken: accessToken || contextFromToken.accessToken || null,
+          refreshToken: refreshToken || null,
+          clientId: clientId || contextFromToken.clientId || null,
+          issuer: issuer || contextFromToken.issuer || null
+        };
       }
 
       var keys = Object.keys(value);
       for (var k = 0; k < keys.length; k++) {
-        var nestedToken = findTokenInObject(value[keys[k]]);
-        if (nestedToken) {
-          return nestedToken;
+        var nestedContext = findAuthContextInObject(value[keys[k]]);
+        if (nestedContext && (nestedContext.accessToken || nestedContext.refreshToken)) {
+          return nestedContext;
         }
       }
     }
 
     return null;
+  }
+
+  function firstTokenValue(source, keys) {
+    var value = firstStringValue(source, keys);
+    if (!value) {
+      return null;
+    }
+    var trimmed = value.trim();
+    return TOKEN_PATTERN.test(trimmed) ? trimmed : null;
+  }
+
+  function firstStringValue(source, keys) {
+    for (var i = 0; i < keys.length; i++) {
+      var key = keys[i];
+      if (!Object.prototype.hasOwnProperty.call(source, key)) {
+        continue;
+      }
+
+      var value = source[key];
+      if (typeof value === "string" && value.trim() !== "") {
+        return value.trim();
+      }
+    }
+    return null;
+  }
+
+  function resolveAuthContextFromToken(token) {
+    if (!TOKEN_PATTERN.test(String(token || ""))) {
+      return {
+        accessToken: null,
+        refreshToken: null,
+        clientId: null,
+        issuer: null
+      };
+    }
+
+    var payload = decodeJwtPayload(token);
+    return {
+      accessToken: token,
+      refreshToken: null,
+      clientId: payload && typeof payload.azp === "string" ? payload.azp : null,
+      issuer: payload && typeof payload.iss === "string" ? payload.iss : null
+    };
+  }
+
+  function hydrateCapturedAuthContext(context) {
+    if (!context) {
+      return;
+    }
+
+    if (context.accessToken && TOKEN_PATTERN.test(String(context.accessToken))) {
+      capturedToken = context.accessToken;
+    }
+    if (context.refreshToken && TOKEN_PATTERN.test(String(context.refreshToken))) {
+      capturedRefreshToken = context.refreshToken;
+    }
+    if (context.clientId && typeof context.clientId === "string") {
+      capturedClientId = context.clientId;
+    }
+    if (context.issuer && typeof context.issuer === "string") {
+      capturedIssuer = context.issuer;
+    }
+  }
+
+  function isTokenNearExpiry(token, skewSeconds) {
+    var payload = decodeJwtPayload(token);
+    if (!payload || typeof payload.exp !== "number") {
+      return false;
+    }
+
+    var now = Math.floor(Date.now() / 1000);
+    var skew = typeof skewSeconds === "number" ? skewSeconds : 0;
+    return payload.exp <= (now + skew);
+  }
+
+  function decodeJwtPayload(token) {
+    if (!TOKEN_PATTERN.test(String(token || ""))) {
+      return null;
+    }
+
+    var parts = String(token).split(".");
+    if (parts.length < 2) {
+      return null;
+    }
+
+    try {
+      var payload = parts[1].replace(/-/g, "+").replace(/_/g, "/");
+      while (payload.length % 4 !== 0) {
+        payload += "=";
+      }
+
+      return JSON.parse(window.atob(payload));
+    } catch (error) {
+      return null;
+    }
   }
 
   function buildIdentityProviderUrl(realm, alias) {

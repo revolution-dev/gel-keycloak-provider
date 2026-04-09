@@ -8,13 +8,6 @@ Supportare la configurazione target:
 
 `Keycloak -> GEL -> SPID`
 
-con personalizzazione della `AuthnRequest` per i metadati/estensioni GEL ricavati esclusivamente da:
-
-- `docs/AuthnRequest_valida.xml`
-- `docs/idp_metadata.xml`
-- `docs/GEL_Kit_Integrazione.zip`
-- `docs/Procedure_di_Configurazione_del_GEL_v4_20201109.pdf`
-
 ## Funzionalita implementate
 
 Il provider `gel-saml` aggiunge rispetto al SAML standard:
@@ -131,7 +124,7 @@ Workflow consigliato:
 
 ## Test reale verso GEL di integrazione
 
-Il kit contiene un metadata IdP remoto di integrazione:
+Il kit di integrazione messo a disposizione da regione Lombardia contiene un metadata IdP remoto di integrazione:
 
 - [`IdpcGelMetadataIntegrazione_locale_PREIT-internet.xml`](/Users/danilo.dinuzzo/Development/workspaces/codex/poc-gel-keycloak-provider/docs/_gel_kit/GEL%20Kit%20Integrazione/IdpcGelMetadataIntegrazione_locale_PREIT-internet.xml)
 
@@ -139,14 +132,13 @@ e una chiave test:
 
 - [`gel-spid.p12`](/Users/danilo.dinuzzo/Development/workspaces/codex/poc-gel-keycloak-provider/docs/_gel_kit/GEL%20Kit%20Integrazione/gel-spid.p12)
 
-Con questi file puoi tentare un test browser-based:
+Con questi file è possibile tentare un test browser-based:
 
 `Keycloak locale -> GEL integrazione remoto -> browser -> Keycloak locale`
 
 Nota importante:
 
 - il browser puo' postare la risposta SAML verso `localhost`, quindi il fatto che Keycloak sia locale non e' di per se' un blocco;
-- resta pero' una ambiguita operativa: il tenant GEL remoto potrebbe accettare solo SP/issuer gia' attesi o gia' abilitati da ARIA.
 
 ### Script di configurazione
 
@@ -174,7 +166,7 @@ chmod +x tools/configure-keycloak-gel-remote.sh
 
 Il tenant GEL di integrazione rifiuta una `AssertionConsumerServiceURL` in `http`.
 
-Per un test locale browser-based conviene quindi esporre Keycloak anche in HTTPS, ad esempio su:
+Per un test locale browser-based bisogna quindi esporre Keycloak anche in HTTPS, ad esempio su:
 
 - `https://localhost:8443`
 
