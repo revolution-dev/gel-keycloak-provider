@@ -1,0 +1,117 @@
+#gel-saml-custom-panel {
+  margin: 0;
+  padding: 1.5rem 1.5rem 1rem;
+  border: 0;
+  background: #ffffff;
+}
+
+.gel-saml-panel__header {
+  margin-bottom: 1.5rem;
+}
+
+.gel-saml-panel__title {
+  margin: 0 0 0.35rem;
+  font-size: 1.2rem;
+}
+
+.gel-saml-panel__subtitle {
+  margin: 0;
+  color: #6a6e73;
+}
+
+.gel-saml-form {
+  display: block;
+}
+
+.gel-saml-form__group {
+  margin-bottom: 1rem;
+}
+
+.gel-saml-form__label-wrapper {
+  min-width: 14rem;
+}
+
+.gel-saml-form__control {
+  max-width: 42rem;
+}
+
+.gel-saml-input {
+  width: 100%;
+}
+
+.gel-saml-textarea {
+  min-height: 7.5rem;
+  resize: vertical;
+}
+
+.gel-saml-form__helper-text {
+  margin-top: 0.45rem;
+  color: #6a6e73;
+}
+
+.gel-saml-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.gel-saml-toggle__button {
+  min-width: 4.5rem;
+}
+
+.gel-saml-toggle__button--active {
+  font-weight: 600;
+}
+
+.gel-saml-form__group--actions {
+  margin-top: 1.5rem;
+}
+
+.gel-saml-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.gel-saml-button:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+}
+
+.gel-saml-status {
+  font-size: 0.9rem;
+}
+
+.gel-saml-status--error {
+  color: #c9190b;
+}
+
+.gel-saml-status--success {
+  color: #3e8635;
+}
+
+.gel-saml-status--info {
+  color: #0066cc;
+}
+
+.gel-saml-hidden {
+  display: none !important;
+}
+
+.gel-saml-native-hidden {
+  display: none !important;
+}
+
+@media (max-width: 992px) {
+  #gel-saml-custom-panel {
+    padding: 1rem;
+  }
+
+  .gel-saml-form__label-wrapper,
+  .gel-saml-form__control {
+    min-width: 100%;
+    max-width: 100%;
+  }
+}

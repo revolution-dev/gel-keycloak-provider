@@ -1,0 +1,5 @@
+it.rdev.keycloak.gel.broker.saml.mappers.GelSamlUserAttributeMapper
+it.rdev.keycloak.gel.broker.saml.mappers.GelSamlUsernameTemplateMapper
+it.rdev.keycloak.gel.broker.saml.mappers.GelSamlXPathAttributeMapper
+it.rdev.keycloak.gel.broker.saml.mappers.GelSamlAttributeToRoleMapper
+it.rdev.keycloak.gel.broker.saml.mappers.GelSamlAdvancedAttributeToRoleMapper
