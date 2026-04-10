@@ -1,4 +1,4 @@
-# GEL Keycloak Provider (PoC)
+# GEL Keycloak Provider
 
 Plugin Java/Maven per Keycloak `20.0.5` che estende il broker SAML standard con campi e comportamenti specifici GEL.
 
@@ -132,7 +132,7 @@ Con questi file è possibile effettuare un test browser-based:
 Prima di avviare il test è necessario effettaure un build del progetto con
 
 ```bash
-mvn clean install
+mvn -DskipTests clean install
 ```
 Tutti i file necessari ad avviare l'ambiente di test sono disponibili all'interno della cartella `test-environment`
 
