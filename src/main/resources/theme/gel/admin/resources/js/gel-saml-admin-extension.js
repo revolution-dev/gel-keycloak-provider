@@ -23,10 +23,13 @@
   var PROXY_QUERY_ENABLED = "1";
   var PROXY_STORAGE_ACTIVE_KEY = "gelSamlProxyActive";
   var PROXY_STORAGE_ALIAS_KEY = "gelSamlProxyAlias";
+  var PROXY_STORAGE_METADATA_CERTS_KEY = "gelSamlProxyMetadataCertificates";
   var GEL_TAB_QUERY_FLAG = "gelTab";
   var GEL_TAB_QUERY_VALUE = "params";
   var SETTINGS_TAB = "settings";
   var TAB_SECTION_ID_PREFIX = "pf-tab-section-settings-";
+  var ROUTE_SEGMENT_IDENTITY_PROVIDERS = "identity-providers";
+  var ROUTE_SEGMENT_IDENTITY_PROVIDER = "identity-provider";
   var STANDARD_SAML_ATTRIBUTE_SET_KEY = "attributeConsumingServiceIndex";
   var DEFAULT_GEL_ATTRIBUTE_SET = "4";
   var DEFAULT_SPID_LEVEL = "L2";
@@ -218,6 +221,7 @@
   var capturedKeycloak = null;
   var currentRouteKey = null;
   var observedTokenVersion = 0;
+  var capturedMetadataCertificates = readProxyMetadataCertificates();
 
   interceptFetch();
   interceptXmlHttpRequest();
@@ -275,14 +279,36 @@
     var queryString = querySplit.length > 1 ? querySplit.slice(1).join("?") : "";
     var segments = pathWithoutQuery.split("/").filter(Boolean);
 
-    var markerIndex = segments.indexOf("identity-providers");
+    var markerIndex = segments.indexOf(ROUTE_SEGMENT_IDENTITY_PROVIDERS);
+    var markerSegment = ROUTE_SEGMENT_IDENTITY_PROVIDERS;
+    if (markerIndex < 0) {
+      markerIndex = segments.indexOf(ROUTE_SEGMENT_IDENTITY_PROVIDER);
+      markerSegment = ROUTE_SEGMENT_IDENTITY_PROVIDER;
+    }
     if (markerIndex < 0) {
       return null;
     }
 
-    var providerId = segments[markerIndex + 1] || "";
-    var rawAlias = segments[markerIndex + 2] || "";
-    var rawTab = segments[markerIndex + 3] || "";
+    var firstSegment = segments[markerIndex + 1] || "";
+    var secondSegment = segments[markerIndex + 2] || "";
+    var thirdSegment = segments[markerIndex + 3] || "";
+
+    // Keycloak route can be either:
+    // - /<realm>/identity-providers/<providerId>/add
+    // - /<realm>/identity-providers/add/<providerId>
+    // We normalize both patterns into the same context shape.
+    var providerId = "";
+    var rawAlias = "";
+    var rawTab = "";
+    if (firstSegment === ROUTE_ACTION_ADD && secondSegment) {
+      providerId = secondSegment;
+      rawAlias = ROUTE_ACTION_ADD;
+      rawTab = thirdSegment || "";
+    } else {
+      providerId = firstSegment;
+      rawAlias = secondSegment;
+      rawTab = thirdSegment;
+    }
     var action = rawAlias === ROUTE_ACTION_ADD ? ROUTE_ACTION_ADD : ROUTE_ACTION_DETAILS;
     var alias = action === ROUTE_ACTION_ADD ? "" : rawAlias;
     var tab = action === ROUTE_ACTION_ADD ? "" : rawTab;
@@ -294,7 +320,11 @@
       realm = segments[markerIndex - 1];
     }
 
-    if (!realm || !providerId || !rawAlias) {
+    if (!realm || !providerId) {
+      return null;
+    }
+
+    if (action !== ROUTE_ACTION_ADD && !rawAlias) {
       return null;
     }
 
@@ -304,6 +334,7 @@
       alias: decodeURIComponent(alias),
       tab: decodeURIComponent(tab),
       action: action,
+      markerSegment: markerSegment,
       query: parseQueryParams(queryString),
       queryString: queryString,
       isHashNavigation: isHashNavigation
@@ -337,8 +368,6 @@
     if (context.action === ROUTE_ACTION_ADD && context.providerId === SAML_PROVIDER_ID) {
       if (context.query[PROXY_QUERY_FLAG] === PROXY_QUERY_ENABLED) {
         setProxyActive(true);
-      } else if (isProxyActive() && !readProxyAlias()) {
-        clearProxyState();
       }
       return;
     }
@@ -381,10 +410,11 @@
   }
 
   function buildIdentityProviderPath(realm, providerId, action, alias, tab) {
+    var routeSegment = resolveIdentityProviderRouteSegment();
     var pathParts = [
       "",
       encodeURIComponent(String(realm || "")),
-      "identity-providers",
+      routeSegment,
       encodeURIComponent(String(providerId || ""))
     ];
 
@@ -473,6 +503,47 @@
   function clearProxyState() {
     setProxyActive(false);
     setProxyAlias(null);
+    setProxyMetadataCertificates(null);
+  }
+
+  function setProxyMetadataCertificates(value) {
+    var normalized = normalizeCertificateCsv(value);
+    capturedMetadataCertificates = normalized;
+
+    var storage = safeStorage(window.sessionStorage);
+    if (!storage) {
+      return;
+    }
+
+    if (normalized) {
+      storage.setItem(PROXY_STORAGE_METADATA_CERTS_KEY, normalized);
+      return;
+    }
+    storage.removeItem(PROXY_STORAGE_METADATA_CERTS_KEY);
+  }
+
+  function readProxyMetadataCertificates() {
+    var storage = safeStorage(window.sessionStorage);
+    if (!storage) {
+      return "";
+    }
+    return normalizeCertificateCsv(storage.getItem(PROXY_STORAGE_METADATA_CERTS_KEY));
+  }
+
+  function rememberMetadataCertificates(certificateCsv) {
+    var normalized = normalizeCertificateCsv(certificateCsv);
+    if (!normalized) {
+      return;
+    }
+
+    if (!capturedMetadataCertificates) {
+      setProxyMetadataCertificates(normalized);
+      return;
+    }
+
+    setProxyMetadataCertificates(
+      mergeCertificateCsv(capturedMetadataCertificates, normalized)
+    );
   }
 
   function syncGelView(context) {
@@ -948,10 +1019,9 @@
 
   function setLoading(isLoading) {
     var saveButton = document.getElementById(SAVE_BUTTON_ID);
-    if (!saveButton) {
-      return;
+    if (saveButton) {
+      saveButton.disabled = isLoading;
     }
-    saveButton.disabled = isLoading;
   }
 
   async function loadGelConfiguration(context) {
@@ -1188,7 +1258,7 @@
     var originalFetch = window.fetch.bind(window);
 
     window.fetch = function patchedFetch(input, init) {
-      var rewrittenRequest = rewriteIdentityProviderCreateRequest(input, init);
+      var rewrittenRequest = rewriteIdentityProviderProxyRequest(input, init);
       captureAuthorizationHeader(rewrittenRequest.input, rewrittenRequest.init);
       return originalFetch(rewrittenRequest.input, rewrittenRequest.init);
     };
@@ -1201,6 +1271,7 @@
 
     var originalOpen = XMLHttpRequest.prototype.open;
     var originalSetRequestHeader = XMLHttpRequest.prototype.setRequestHeader;
+    var originalSend = XMLHttpRequest.prototype.send;
 
     XMLHttpRequest.prototype.open = function patchedOpen(method, url) {
       this.__gelRequestUrl = String(url || "");
@@ -1217,9 +1288,28 @@
       }
       return originalSetRequestHeader.apply(this, arguments);
     };
+
+    XMLHttpRequest.prototype.send = function patchedSend(body) {
+      var rewritten = rewriteXmlHttpRequestProxyBody(
+        String(this.__gelRequestMethod || "GET"),
+        String(this.__gelRequestUrl || ""),
+        body
+      );
+      return originalSend.call(this, rewritten);
+    };
   }
 
-  function rewriteIdentityProviderCreateRequest(input, init) {
+  /**
+   * Rewrites admin REST requests while the GEL proxy create flow is active.
+   *
+   * <p>We currently patch:
+   * <ul>
+   *   <li>IdP create request (`.../identity-provider/instances`) to persist `providerId=gel-saml`;</li>
+   *   <li>metadata import request (`.../identity-provider/import-config`) so default SAML import can hydrate GEL defaults.</li>
+   * </ul>
+   * </p>
+   */
+  function rewriteIdentityProviderProxyRequest(input, init) {
     if (!isProxyCreateRouteActive()) {
       return {
         input: input,
@@ -1235,13 +1325,28 @@
       };
     }
 
-    if (requestInfo.method !== "POST" || !isIdentityProviderCreateRequestUrl(requestInfo.url)) {
+    if (requestInfo.method !== "POST") {
       return {
         input: input,
         init: init
       };
     }
 
+    if (isIdentityProviderCreateRequestUrl(requestInfo.url)) {
+      return rewriteIdentityProviderCreatePayloadRequest(input, init, requestInfo);
+    }
+
+    if (isIdentityProviderImportConfigRequestUrl(requestInfo.url)) {
+      return rewriteIdentityProviderImportConfigRequest(input, init, requestInfo);
+    }
+
+    return {
+      input: input,
+      init: init
+    };
+  }
+
+  function rewriteIdentityProviderCreatePayloadRequest(input, init, requestInfo) {
     if (typeof requestInfo.body !== "string" || requestInfo.body.trim() === "") {
       return {
         input: input,
@@ -1267,6 +1372,8 @@
     }
 
     payload.providerId = TARGET_PROVIDER_ID;
+    normalizeCreatePayloadGelConfig(payload);
+    applyCapturedMetadataCertificates(payload);
     if (typeof payload.alias === "string" && payload.alias.trim() !== "") {
       setProxyAlias(payload.alias.trim());
     }
@@ -1285,15 +1392,421 @@
     };
   }
 
+  function rewriteIdentityProviderImportConfigRequest(input, init, requestInfo) {
+    var rewrittenBody = rewriteRequestBodyProviderId(requestInfo.body);
+    if (!rewrittenBody.changed) {
+      return {
+        input: input,
+        init: init
+      };
+    }
+
+    var rewrittenInit = Object.assign({}, init || {});
+    rewrittenInit.method = requestInfo.method;
+    rewrittenInit.body = rewrittenBody.body;
+
+    if (!rewrittenInit.headers && input && typeof Request !== "undefined" && input instanceof Request) {
+      rewrittenInit.headers = input.headers;
+    }
+
+    return {
+      input: requestInfo.url,
+      init: rewrittenInit
+    };
+  }
+
+  function rewriteRequestBodyProviderId(body) {
+    if (typeof body === "string") {
+      var parsedPayload;
+      try {
+        parsedPayload = JSON.parse(body);
+      } catch (error) {
+        return {
+          changed: false,
+          body: body
+        };
+      }
+
+      if (!parsedPayload || parsedPayload.providerId !== SAML_PROVIDER_ID) {
+        return {
+          changed: false,
+          body: body
+        };
+      }
+
+      captureMetadataCertificatesFromImportPayload(parsedPayload);
+      parsedPayload.providerId = TARGET_PROVIDER_ID;
+      return {
+        changed: true,
+        body: JSON.stringify(parsedPayload)
+      };
+    }
+
+    if (typeof FormData !== "undefined" && body instanceof FormData) {
+      var providerId = body.get("providerId");
+      if (providerId !== SAML_PROVIDER_ID) {
+        return {
+          changed: false,
+          body: body
+        };
+      }
+
+      captureMetadataCertificatesFromImportFormData(body);
+      var rewrittenFormData = new FormData();
+      body.forEach(function (value, key) {
+        rewrittenFormData.append(key, value);
+      });
+      rewrittenFormData.set("providerId", TARGET_PROVIDER_ID);
+      return {
+        changed: true,
+        body: rewrittenFormData
+      };
+    }
+
+    if (typeof URLSearchParams !== "undefined" && body instanceof URLSearchParams) {
+      if (body.get("providerId") !== SAML_PROVIDER_ID) {
+        return {
+          changed: false,
+          body: body
+        };
+      }
+
+      var rewrittenParams = new URLSearchParams(body.toString());
+      rewrittenParams.set("providerId", TARGET_PROVIDER_ID);
+      return {
+        changed: true,
+        body: rewrittenParams
+      };
+    }
+
+    return {
+      changed: false,
+      body: body
+    };
+  }
+
+  function normalizeCreatePayloadGelConfig(payload) {
+    if (!payload || typeof payload !== "object") {
+      return;
+    }
+
+    if (!payload.config || typeof payload.config !== "object") {
+      payload.config = {};
+    }
+
+    var config = payload.config;
+    var attributeSet = trimToNull(config[STANDARD_SAML_ATTRIBUTE_SET_KEY]);
+    var gelAttributeSet = trimToNull(config[GEL_KEYS.attributeSet]);
+    var entityId = trimToNull(config.entityId);
+    var spNameQualifier = trimToNull(config[GEL_KEYS.spNameQualifier]);
+    var spidLevel = trimToNull(config[GEL_KEYS.spidLevel]);
+
+    if (!gelAttributeSet && attributeSet) {
+      config[GEL_KEYS.attributeSet] = attributeSet;
+    } else if (!attributeSet && gelAttributeSet) {
+      config[STANDARD_SAML_ATTRIBUTE_SET_KEY] = gelAttributeSet;
+    }
+
+    if (!spNameQualifier && entityId) {
+      config[GEL_KEYS.spNameQualifier] = entityId;
+    }
+
+    if (!spidLevel) {
+      config[GEL_KEYS.spidLevel] = DEFAULT_SPID_LEVEL;
+    }
+  }
+
+  /**
+   * Ensures the create payload uses the complete certificate set extracted from metadata XML,
+   * compensating UI import flows that may keep only a subset of ds:X509Certificate values.
+   */
+  function applyCapturedMetadataCertificates(payload) {
+    if (!payload || typeof payload !== "object") {
+      return;
+    }
+
+    if (!payload.config || typeof payload.config !== "object") {
+      payload.config = {};
+    }
+
+    var metadataCertificateCsv = resolveMetadataCertificateCsv(payload.config);
+    if (!metadataCertificateCsv) {
+      return;
+    }
+
+    var existing = normalizeCertificateCsv(payload.config.signingCertificate);
+    payload.config.signingCertificate = existing
+      ? mergeCertificateCsv(existing, metadataCertificateCsv)
+      : metadataCertificateCsv;
+  }
+
+  function resolveMetadataCertificateCsv(config) {
+    var fromDescriptor = extractMetadataCertificateCsvFromConfig(config);
+    if (fromDescriptor) {
+      rememberMetadataCertificates(fromDescriptor);
+      return fromDescriptor;
+    }
+
+    if (capturedMetadataCertificates) {
+      return capturedMetadataCertificates;
+    }
+
+    var fromForm = extractMetadataCertificateCsvFromFormDescriptor();
+    if (fromForm) {
+      rememberMetadataCertificates(fromForm);
+      return fromForm;
+    }
+
+    return readProxyMetadataCertificates();
+  }
+
+  function captureMetadataCertificatesFromImportPayload(payload) {
+    if (!payload || typeof payload !== "object") {
+      return;
+    }
+
+    var metadataXml = null;
+    if (typeof payload.fromMetadata === "string" && payload.fromMetadata.trim() !== "") {
+      metadataXml = payload.fromMetadata;
+    } else if (typeof payload.from === "string" && payload.from.trim() !== "") {
+      metadataXml = payload.from;
+    } else if (typeof payload.metadata === "string" && payload.metadata.trim() !== "") {
+      metadataXml = payload.metadata;
+    }
+
+    if (!metadataXml) {
+      return;
+    }
+
+    var metadataCertificateCsv = extractMetadataCertificateCsv(metadataXml);
+    rememberMetadataCertificates(metadataCertificateCsv);
+  }
+
+  function captureMetadataCertificatesFromImportFormData(formData) {
+    if (!formData || typeof FormData === "undefined" || !(formData instanceof FormData)) {
+      return;
+    }
+
+    var metadataText = formData.get("fromMetadata");
+    if (typeof metadataText === "string" && metadataText.trim() !== "") {
+      rememberMetadataCertificates(extractMetadataCertificateCsv(metadataText));
+    }
+
+    var file = formData.get("file");
+    if (file && typeof file.text === "function") {
+      file.text().then(function (xml) {
+        rememberMetadataCertificates(extractMetadataCertificateCsv(xml));
+      }).catch(function () {
+        // Best effort: keep default behavior when file parsing is not available.
+      });
+    }
+  }
+
+  function extractMetadataCertificateCsvFromConfig(config) {
+    if (!config || typeof config !== "object") {
+      return "";
+    }
+
+    var descriptorCandidates = [
+      "fromMetadata",
+      "metadata",
+      "samlEntityDescriptor",
+      "entityDescriptor"
+    ];
+
+    for (var i = 0; i < descriptorCandidates.length; i++) {
+      var key = descriptorCandidates[i];
+      var value = config[key];
+      if (typeof value !== "string" || value.trim() === "") {
+        continue;
+      }
+
+      var extracted = extractMetadataCertificateCsv(value);
+      if (extracted) {
+        return extracted;
+      }
+    }
+
+    return "";
+  }
+
+  function extractMetadataCertificateCsvFromFormDescriptor() {
+    var field = findFieldByLabelText("saml entity descriptor");
+    if (!field) {
+      return "";
+    }
+    return extractMetadataCertificateCsv(String(field.value || ""));
+  }
+
+  function extractMetadataCertificateCsv(source) {
+    if (typeof source !== "string") {
+      return "";
+    }
+
+    var trimmed = source.trim();
+    if (!trimmed || trimmed.charAt(0) !== "<") {
+      return "";
+    }
+
+    if (typeof DOMParser === "undefined") {
+      return "";
+    }
+
+    try {
+      var documentNode = new DOMParser().parseFromString(trimmed, "application/xml");
+      if (!documentNode || documentNode.getElementsByTagName("parsererror").length > 0) {
+        return "";
+      }
+
+      var certValues = [];
+      var seen = {};
+      var nodes = documentNode.getElementsByTagName("*");
+      for (var i = 0; i < nodes.length; i++) {
+        var node = nodes[i];
+        if (!node || String(node.localName || "") !== "X509Certificate") {
+          continue;
+        }
+
+        var cert = String(node.textContent || "").replace(/\s+/g, "");
+        if (!cert || seen[cert]) {
+          continue;
+        }
+        seen[cert] = true;
+        certValues.push(cert);
+      }
+
+      return certValues.join(",");
+    } catch (error) {
+      return "";
+    }
+  }
+
+  function mergeCertificateCsv(first, second) {
+    var merged = [];
+    var seen = {};
+    var pushValues = function (csv) {
+      var values = splitCertificateCsv(csv);
+      for (var i = 0; i < values.length; i++) {
+        var value = values[i];
+        if (!value || seen[value]) {
+          continue;
+        }
+        seen[value] = true;
+        merged.push(value);
+      }
+    };
+
+    pushValues(first);
+    pushValues(second);
+    return merged.join(",");
+  }
+
+  function normalizeCertificateCsv(value) {
+    return splitCertificateCsv(value).join(",");
+  }
+
+  function splitCertificateCsv(value) {
+    if (typeof value !== "string" || value.trim() === "") {
+      return [];
+    }
+
+    var parts = value.split(",");
+    var normalized = [];
+    var seen = {};
+    for (var i = 0; i < parts.length; i++) {
+      var cert = String(parts[i] || "").replace(/\s+/g, "");
+      if (!cert || seen[cert]) {
+        continue;
+      }
+      seen[cert] = true;
+      normalized.push(cert);
+    }
+    return normalized;
+  }
+
+  function findFieldByLabelText(expectedLabel) {
+    var target = String(expectedLabel || "").trim().toLowerCase();
+    if (!target) {
+      return null;
+    }
+
+    var labels = document.querySelectorAll("label");
+    for (var i = 0; i < labels.length; i++) {
+      var label = labels[i];
+      var labelText = String(label.textContent || "").replace(/\s+/g, " ").trim().toLowerCase();
+      if (labelText !== target) {
+        continue;
+      }
+
+      var fieldId = label.getAttribute("for");
+      if (fieldId) {
+        var byId = document.getElementById(fieldId);
+        if (byId) {
+          return byId;
+        }
+      }
+
+      var container = label.closest(".pf-c-form__group, .pf-v5-c-form__group") || label.parentElement;
+      if (!container) {
+        continue;
+      }
+
+      var candidate = container.querySelector("textarea, input");
+      if (candidate) {
+        return candidate;
+      }
+    }
+
+    return null;
+  }
+
   function isProxyCreateRouteActive() {
     var context = resolveIdentityProviderContext();
     if (!context) {
-      return false;
+      return isProxyActive() && !readProxyAlias();
     }
 
     return context.action === ROUTE_ACTION_ADD
       && context.providerId === SAML_PROVIDER_ID
-      && context.query[PROXY_QUERY_FLAG] === PROXY_QUERY_ENABLED;
+      && (
+        context.query[PROXY_QUERY_FLAG] === PROXY_QUERY_ENABLED
+        || isProxyActive()
+      );
+  }
+
+  function rewriteXmlHttpRequestProxyBody(method, url, body) {
+    if (!isProxyCreateRouteActive() || method !== "POST") {
+      return body;
+    }
+
+    if (isIdentityProviderCreateRequestUrl(url)) {
+      if (typeof body !== "string" || body.trim() === "") {
+        return body;
+      }
+
+      try {
+        var payload = JSON.parse(body);
+        if (!payload || payload.providerId !== SAML_PROVIDER_ID) {
+          return body;
+        }
+        payload.providerId = TARGET_PROVIDER_ID;
+        normalizeCreatePayloadGelConfig(payload);
+        applyCapturedMetadataCertificates(payload);
+        if (typeof payload.alias === "string" && payload.alias.trim() !== "") {
+          setProxyAlias(payload.alias.trim());
+        }
+        return JSON.stringify(payload);
+      } catch (error) {
+        return body;
+      }
+    }
+
+    if (isIdentityProviderImportConfigRequestUrl(url)) {
+      var rewrittenBody = rewriteRequestBodyProviderId(body);
+      return rewrittenBody.changed ? rewrittenBody.body : body;
+    }
+
+    return body;
   }
 
   function extractRequestInfo(input, init) {
@@ -1315,7 +1828,7 @@
       if (init.method) {
         method = String(init.method);
       }
-      if (typeof init.body === "string") {
+      if (typeof init.body !== "undefined") {
         body = init.body;
       }
     }
@@ -1338,6 +1851,32 @@
     } catch (error) {
       return /\/identity-provider\/instances\/?$/.test(String(url));
     }
+  }
+
+  function isIdentityProviderImportConfigRequestUrl(url) {
+    if (!url) {
+      return false;
+    }
+
+    try {
+      var absoluteUrl = new URL(url, window.location.origin);
+      return /\/identity-provider\/import-config\/?$/.test(absoluteUrl.pathname);
+    } catch (error) {
+      return /\/identity-provider\/import-config\/?$/.test(String(url));
+    }
+  }
+
+  function resolveIdentityProviderRouteSegment() {
+    var context = resolveIdentityProviderContext();
+    if (context && context.markerSegment) {
+      return context.markerSegment;
+    }
+
+    var locationValue = String(window.location.hash || "") + " " + String(window.location.pathname || "");
+    if (locationValue.indexOf("/" + ROUTE_SEGMENT_IDENTITY_PROVIDER + "/") >= 0) {
+      return ROUTE_SEGMENT_IDENTITY_PROVIDER;
+    }
+    return ROUTE_SEGMENT_IDENTITY_PROVIDERS;
   }
 
   function captureAuthorizationHeader(input, init) {
@@ -1419,6 +1958,15 @@
     }
 
     return null;
+  }
+
+  function trimToNull(value) {
+    if (typeof value !== "string") {
+      return null;
+    }
+
+    var trimmed = value.trim();
+    return trimmed ? trimmed : null;
   }
 
   async function refreshAccessTokenIfPossible() {

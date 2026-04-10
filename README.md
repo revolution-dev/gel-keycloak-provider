@@ -90,6 +90,10 @@ viene mostrato un pannello dedicato **Configurazione GEL SAML** con i parametri:
 
 Il pulsante `Salva parametri GEL` aggiorna la configurazione `config` dell'Identity Provider via Admin REST.
 
+Nel flusso di creazione (`Add provider`) il plugin intercetta anche l'import metadata del provider `gel-saml`
+e normalizza `Validating X509 Certificates` con tutti i `ds:X509Certificate` trovati nel descriptor XML,
+evitando import parziali osservati sulla UI standard.
+
 ## Configurazione da Admin Console
 
 1. `Identity Providers` -> `Add provider` -> selezionare `GEL SAML v2.0`.

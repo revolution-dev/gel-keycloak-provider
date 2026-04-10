@@ -1,11 +1,24 @@
 package it.rdev.keycloak.gel.broker.saml;
 
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
 import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
+import javax.xml.XMLConstants;
+import javax.xml.parsers.DocumentBuilder;
+import javax.xml.parsers.DocumentBuilderFactory;
+import javax.xml.xpath.XPath;
+import javax.xml.xpath.XPathConstants;
+import javax.xml.xpath.XPathFactory;
+
+import org.jboss.logging.Logger;
 import org.keycloak.Config.Scope;
 import org.keycloak.broker.saml.SAMLIdentityProviderConfig;
 import org.keycloak.broker.saml.SAMLIdentityProviderFactory;
@@ -15,6 +28,8 @@ import org.keycloak.provider.ConfiguredProvider;
 import org.keycloak.provider.ProviderConfigProperty;
 import org.keycloak.saml.common.constants.JBossSAMLURIConstants;
 import org.keycloak.saml.validators.DestinationValidator;
+import org.w3c.dom.Node;
+import org.w3c.dom.NodeList;
 
 /**
  * Factory for the GEL custom SAML identity provider.
@@ -25,6 +40,7 @@ import org.keycloak.saml.validators.DestinationValidator;
 public class GelSamlIdentityProviderFactory extends SAMLIdentityProviderFactory implements ConfiguredProvider {
 
     public static final String PROVIDER_ID = "gel-saml";
+    private static final Logger LOG = Logger.getLogger(GelSamlIdentityProviderFactory.class);
 
     private static final List<String> SPID_LEVEL_OPTIONS = List.of("L2", "L3");
     private static final List<String> ATTRIBUTE_SET_OPTIONS = List.of("0", "1", "2", "3", "4", "5");
@@ -210,7 +226,18 @@ public class GelSamlIdentityProviderFactory extends SAMLIdentityProviderFactory 
 
     @Override
     public Map<String, String> parseConfig(KeycloakSession session, InputStream inputStream) {
-        Map<String, String> config = super.parseConfig(session, inputStream);
+        byte[] metadataBytes = readAllBytes(inputStream);
+        Map<String, String> config = super.parseConfig(session, new ByteArrayInputStream(metadataBytes));
+
+        /*
+         * Keycloak 20 metadata import can persist only a subset of X509 certificates in some
+         * SAML descriptors. GEL integration requires the full certificate set to validate
+         * incoming signed responses across certificate rotations.
+         */
+        String allMetadataCertificates = extractAllMetadataCertificates(metadataBytes);
+        if (allMetadataCertificates != null && !allMetadataCertificates.isBlank()) {
+            config.put(SAMLIdentityProviderConfig.SIGNING_CERTIFICATE_KEY, allMetadataCertificates);
+        }
 
         // GEL-oriented defaults to reduce manual setup in PoC phase.
         config.putIfAbsent(SAMLIdentityProviderConfig.NAME_ID_POLICY_FORMAT, JBossSAMLURIConstants.NAMEID_FORMAT_TRANSIENT.get());
@@ -219,6 +246,77 @@ public class GelSamlIdentityProviderFactory extends SAMLIdentityProviderFactory 
         config.putIfAbsent(GelSamlIdentityProviderConfig.GEL_SPID_LEVEL, "L2");
 
         return config;
+    }
+
+    /**
+     * Reads the metadata stream fully so it can be parsed both by Keycloak standard logic and by
+     * the GEL-specific certificate extractor.
+     */
+    private byte[] readAllBytes(InputStream inputStream) {
+        try {
+            ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
+            byte[] buffer = new byte[8 * 1024];
+            int read;
+            while ((read = inputStream.read(buffer)) != -1) {
+                outputStream.write(buffer, 0, read);
+            }
+            return outputStream.toByteArray();
+        } catch (IOException exception) {
+            throw new IllegalStateException("Unable to read SAML metadata stream.", exception);
+        }
+    }
+
+    /**
+     * Extracts every unique ds:X509Certificate entry from metadata XML preserving declaration order.
+     *
+     * @param metadataBytes metadata content.
+     * @return comma-separated certificate list for Keycloak config or empty when parsing fails.
+     */
+    private String extractAllMetadataCertificates(byte[] metadataBytes) {
+        if (metadataBytes == null || metadataBytes.length == 0) {
+            return "";
+        }
+
+        try {
+            DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
+            factory.setNamespaceAware(true);
+            factory.setFeature(XMLConstants.FEATURE_SECURE_PROCESSING, true);
+            factory.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
+            factory.setFeature("http://xml.org/sax/features/external-general-entities", false);
+            factory.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
+            factory.setFeature("http://apache.org/xml/features/nonvalidating/load-external-dtd", false);
+
+            DocumentBuilder builder = factory.newDocumentBuilder();
+            org.w3c.dom.Document metadataDocument = builder.parse(new ByteArrayInputStream(metadataBytes));
+
+            XPath xPath = XPathFactory.newInstance().newXPath();
+            NodeList certificateNodes = (NodeList) xPath.evaluate(
+                    "//*[local-name()='X509Certificate']",
+                    metadataDocument,
+                    XPathConstants.NODESET);
+
+            Set<String> certificates = new LinkedHashSet<>();
+            for (int index = 0; index < certificateNodes.getLength(); index++) {
+                Node node = certificateNodes.item(index);
+                if (node == null || node.getTextContent() == null) {
+                    continue;
+                }
+
+                String normalized = node.getTextContent().replaceAll("\\s+", "");
+                if (!normalized.isEmpty()) {
+                    certificates.add(normalized);
+                }
+            }
+
+            if (certificates.isEmpty()) {
+                return "";
+            }
+
+            return String.join(",", certificates);
+        } catch (Exception exception) {
+            LOG.warnf(exception, "Unable to extract all certificates from GEL metadata. Keeping default Keycloak parser output.");
+            return "";
+        }
     }
 
     @Override
