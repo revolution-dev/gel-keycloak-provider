@@ -1,0 +1,26 @@
+version: "3.9"
+
+services:
+  keycloak:
+    image: quay.io/keycloak/keycloak:20.0.5
+    container_name: keycloak-spid-poc
+    command:
+      - start-dev
+      - --http-enabled=true
+      - --https-certificate-file=/opt/keycloak/conf/certs/localhost.crt
+      - --https-certificate-key-file=/opt/keycloak/conf/certs/localhost.key
+      - --hostname-url=https://localhost:8443
+      - --hostname-strict=false
+      - --spi-theme-cache-themes=false
+      - --spi-theme-cache-templates=false
+      - --spi-theme-static-max-age=-1
+    environment:
+      KEYCLOAK_ADMIN: admin
+      KEYCLOAK_ADMIN_PASSWORD: admin
+      KC_LOG_LEVEL: INFO
+    ports:
+      - "8080:8080"
+      - "8443:8443"
+    volumes:
+      - ../target/gel-keycloak-provider-20.0.0.jar:/opt/keycloak/providers/gel-keycloak-provider-20.0.0.jar
+      - ./scripts/certs:/opt/keycloak/conf/certs:ro

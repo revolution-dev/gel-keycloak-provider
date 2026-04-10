@@ -6,7 +6,7 @@
 
     <groupId>it.rdev</groupId>
     <artifactId>gel-keycloak-provider</artifactId>
-    <version>0.1.0-SNAPSHOT</version>
+    <version>20.0.0</version>
     <packaging>jar</packaging>
 
     <name>gel-keycloak-provider</name>

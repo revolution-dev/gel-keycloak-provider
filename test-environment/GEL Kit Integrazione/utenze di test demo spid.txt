@@ -1,0 +1,2 @@
+Gli account di test disponibili per l'identity provider SPID DEMO sono repiribili al seguente link:
+https://demo.spid.gov.it/users 

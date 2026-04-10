@@ -25,7 +25,7 @@ Il provider `gel-saml` aggiunge rispetto al SAML standard:
    - `https://www.spid.gov.it/SpidL3`
 4. Set attributi GEL (`gelAttributeSet`, con override di `AttributeConsumingServiceIndex`, da `0` a `5`)
 5. Estensioni custom libere (`TAG=VALORE`, una per riga)
-6. Log opzionale della `AuthnRequest` per analisi differenziale PoC
+6. Log opzionale della `AuthnRequest` per debug
 7. Estensione Admin Console con pagina custom `gel-saml` per configurare i parametri GEL aggiuntivi
 
 ## Struttura progetto
@@ -41,13 +41,13 @@ Il provider `gel-saml` aggiunge rispetto al SAML standard:
 ## Build
 
 ```bash
-cd /Users/danilo.dinuzzo/Development/workspaces/codex/poc-gel-keycloak-provider/gel-keycloak-provider
+cd gel-keycloak-provider
 mvn -DskipTests clean package
 ```
 
 Output:
 
-- `target/gel-keycloak-provider-0.1.0-SNAPSHOT.jar`
+- `target/gel-keycloak-provider-20.0.0.jar`
 
 ## Installazione su Keycloak 20.0.5
 
@@ -66,7 +66,7 @@ bin/kc.sh start-dev
 
 4. Impostare il tema admin del realm su `gel`:
    - `Realm Settings` -> `Themes` -> `Admin theme` -> `gel`
-   - Logout/Login in Admin Console dopo la modifica tema
+   - Logout/Login in Admin Console dopo la modifica tema (oppure svuotare la cache del browser)
 
 ## Pagina custom Admin Console (GEL)
 
@@ -90,11 +90,7 @@ viene mostrato un pannello dedicato **Configurazione GEL SAML** con i parametri:
 
 Il pulsante `Salva parametri GEL` aggiorna la configurazione `config` dell'Identity Provider via Admin REST.
 
-Nel flusso di creazione (`Add provider`) il plugin intercetta anche l'import metadata del provider `gel-saml`
-e normalizza `Validating X509 Certificates` con tutti i `ds:X509Certificate` trovati nel descriptor XML,
-evitando import parziali osservati sulla UI standard.
-
-## Configurazione da Admin Console
+## Configurazione manuale da Admin Console
 
 1. `Identity Providers` -> `Add provider` -> selezionare `GEL SAML v2.0`.
 2. Configurare almeno:
@@ -110,170 +106,51 @@ evitando import parziali osservati sulla UI standard.
    - estensioni booleane (`ENABLE_CIE`, `CNS`, `CIEONLY`, `EIDAS`, `usoProfessionale`, `usoProfessionaleGiuridico`)
    - `Custom GEL Extensions` (es. `MIA_ESTENSIONE=SI`)
 
-## PoC con SimpleSAMLphp (simulazione GEL)
+## Configurazione tramite IdP metadata da Admin Console
 
-Il plugin non dipende da GEL reale: puoi usarlo con un IdP SAML simulato (SimpleSAMLphp) per confrontare la `AuthnRequest` prodotta con il file `docs/AuthnRequest_valida.xml`.
+1. `Identity Providers` -> `Add provider` -> selezionare `GEL SAML v2.0`.
+2. Inserire in `SAML entity descriptor` l'URL che permette di ottenere i metadata dell'IdP o, in alternativa, deselezionare il flag `Use entity descriptor` ed importare il file xml contenente i metadati in `Import config from file`
+3. Impostare il valore corretto nel campo `Service provider entity ID` e modificare la gestione del `Principal type`in accordo con le proprie regole di gestione dell'utente
+4. Salvare l'IdP appena creato e procedere con le configurazioni nel tab `GEL Params`
 
-Workflow consigliato:
+## Test verso GEL di integrazione
 
-1. Configura SimpleSAMLphp come IdP SAML2.
-2. Importa metadata/certificato IdP in Keycloak (`gel-saml`).
-3. Abilita `Log AuthnRequest` nel provider.
-4. Esegui login brokered da Keycloak e cattura la richiesta.
-5. Confronta differenze su:
-   - `GEL Attribute Set`
-   - `RequestedAuthnContext`
-   - `NameIDPolicy@SPNameQualifier`
-   - contenuto `samlp:Extensions`
+Il kit di integrazione messo a disposizione da regione Lombardia (in fondo allas seguente [`PAGINA`](https://www.trasformazionedigitale.regione.lombardia.it/wps/portal/site/trasformazionedigitale/api-e-interoperabilita/supporto-agli-enti-locali-per-adesione-a-spid#:~:text=Per%20ulteriori%20informazioni%20o%20supporto,.gel%40ariaspa.it) contiene un metadata IdP remoto di integrazione:
 
-## Test reale verso GEL di integrazione
-
-Il kit di integrazione messo a disposizione da regione Lombardia contiene un metadata IdP remoto di integrazione:
-
-- [`IdpcGelMetadataIntegrazione_locale_PREIT-internet.xml`](/Users/danilo.dinuzzo/Development/workspaces/codex/poc-gel-keycloak-provider/docs/_gel_kit/GEL%20Kit%20Integrazione/IdpcGelMetadataIntegrazione_locale_PREIT-internet.xml)
+- IdpcGelMetadataIntegrazione_locale_PREIT-internet.xml
 
 e una chiave test:
 
-- [`gel-spid.p12`](/Users/danilo.dinuzzo/Development/workspaces/codex/poc-gel-keycloak-provider/docs/_gel_kit/GEL%20Kit%20Integrazione/gel-spid.p12)
+- gel-spid.p12
 
-Con questi file è possibile tentare un test browser-based:
+Con questi file è possibile effettuare un test browser-based:
 
 `Keycloak locale -> GEL integrazione remoto -> browser -> Keycloak locale`
 
-Nota importante:
+### Ambiente di test per effettuare il test verso l'istanza di GEL messa a disposizione da Regione Lombardia
 
-- il browser puo' postare la risposta SAML verso `localhost`, quindi il fatto che Keycloak sia locale non e' di per se' un blocco;
-
-### Script di configurazione
-
-E' disponibile lo script:
-
-- [`tools/configure-keycloak-gel-remote.sh`](/Users/danilo.dinuzzo/Development/workspaces/codex/poc-gel-keycloak-provider/tools/configure-keycloak-gel-remote.sh)
-
-Lo script:
-
-1. crea o aggiorna il realm `gel-poc`
-2. imposta `Admin theme = gel`
-3. crea un client OIDC pubblico di test
-4. importa la chiave di firma test del kit come realm key provider RSA
-5. crea o aggiorna l'Identity Provider `gel-saml` verso l'endpoint GEL remoto
-
-Esecuzione standard:
+Prima di avviare il test è necessario effettaure un build del progetto con
 
 ```bash
-cd /Users/danilo.dinuzzo/Development/workspaces/codex/poc-gel-keycloak-provider
-chmod +x tools/configure-keycloak-gel-remote.sh
-./tools/configure-keycloak-gel-remote.sh
+mvn clean install
 ```
+Tutti i file necessari ad avviare l'ambiente di test sono disponibili all'interno della cartella `test-environment`
 
-### Prerequisito GEL: ACS in HTTPS
+### Creazione ambiente di test
 
-Il tenant GEL di integrazione rifiuta una `AssertionConsumerServiceURL` in `http`.
+1. Assicurarsi che in `GEL Kit Integrazione` sia presente la versione più aggiornata del kit di integrazione rilasciato da regione lombardia
+2. Eseguire lo script `scripts\generate-localhost-cert.sh` o generare i certificati che saranno utilizzati da keycloak per la configurazione HTTPS in `scripts\certs`
+3. Eseguire `docker compose up -d` in `test-environment` per avviare il container keycloak:20.0.5
+4. Eseguire `scripts\configure-keycloak-gel-remote.sh` per configurare keycloak. Lo script effettua le seguenti operazioni:
+   - creazione del realm `gel-poc`
+   - applicazione del tema `gel` al realm `master`
+   - aggiornamento impostazioni realm `gel-poc`
+   - creazione client `gel-browser-test`
+   - creazione dell'identity provider `gel-saml-remote` di tipo `gel-saml`
+   - creazione dei mappers per il nuovo IdP
+   - visualizzazione dell'URL di test per verificare il funzionamento
 
-Per un test locale browser-based bisogna quindi esporre Keycloak anche in HTTPS, ad esempio su:
+### Esecuzione del test
 
-- `https://localhost:8443`
+Una volta creato l'ambiente di test basta incollare l'URL ottenuto dallo script di configurazione di keycloak in un browser web per effettuare il test
 
-Nel repository trovi un setup di esempio:
-
-- [docker-compose.yml](/Users/danilo.dinuzzo/Development/workspaces/codex/poc-gel-keycloak-provider/docker-compose.yml)
-- [tools/generate-localhost-cert.sh](/Users/danilo.dinuzzo/Development/workspaces/codex/poc-gel-keycloak-provider/tools/generate-localhost-cert.sh)
-
-Passi suggeriti:
-
-```bash
-cd /Users/danilo.dinuzzo/Development/workspaces/codex/poc-gel-keycloak-provider
-./tools/generate-localhost-cert.sh
-docker compose up -d --force-recreate keycloak
-```
-
-Poi riconfigura Keycloak usando l'endpoint admin HTTPS locale:
-
-```bash
-KEYCLOAK_URL=https://localhost:8443 \
-CURL_INSECURE=true \
-./tools/configure-keycloak-gel-remote.sh
-```
-
-`CURL_INSECURE=true` serve solo per il PoC con certificato self-signed locale.
-
-Nota di compatibilita Keycloak `20.0.5`:
-
-- `--hostname` accetta solo il nome host
-- per specificare una URL completa con schema e porta bisogna usare `--hostname-url`
-
-Esempio corretto:
-
-```bash
---hostname-url=https://localhost:8443
-```
-
-Esempio errato:
-
-```bash
---hostname=https://localhost:8443
-```
-
-Quest'ultima forma porta a URL rotte del tipo `https://https:` nella Admin Console.
-
-Default usati dallo script:
-
-- `IdP Entity ID`: estratto dal metadata remoto
-- `Single Sign-On Service URL`: estratto dal metadata remoto
-- `SP Entity ID (Issuer)`: `https://idpcgel.integrazione.lispa.it/gelmetadata/test`
-- `NameID SPNameQualifier`: uguale all'issuer
-- `Principal Type`: `ATTRIBUTE`
-- `Principal Attribute`: `codiceFiscale`
-- broker mappers created by the helper script:
-  - `codiceFiscale` -> `username`
-  - `nome` -> `firstName`
-  - `cognome` -> `lastName`
-  - `emailAddress` -> `email`
-- `GEL Attribute Set`: `4`
-- `SPID Level`: `L2`
-- request firmata con la chiave presente in `gel-spid.p12`
-
-Nota tecnica sui certificati IdP:
-
-- il campo `signingCertificate` del broker SAML di Keycloak 20 non vuole PEM completi
-- i certificati vanno salvati come contenuto Base64 X509, separati da virgola
-- e' Keycloak ad aggiungere internamente `BEGIN/END CERTIFICATE` durante il parsing
-
-Ho scelto questi default perche' sono i piu' coerenti con il kit di integrazione e con il tenant di test condiviso.
-
-### Modalita confronto con la request di esempio
-
-Se vuoi forzare una configurazione piu' vicina alla request Campania usata per il confronto differenziale:
-
-```bash
-SP_ENTITY_ID='https://spidgateway.regione.campania.it/gelmetadata/r_campan' \
-SP_NAME_QUALIFIER='https://spidgateway.regione.campania.it/gelmetadata/r_campan' \
-ATTRIBUTE_SET=3 \
-ENABLE_CIE=true \
-ENABLE_CNS=true \
-./tools/configure-keycloak-gel-remote.sh
-```
-
-Questa modalita e' utile per confrontare la `AuthnRequest`, ma potrebbe ridurre le probabilita di accettazione da parte del tenant GEL remoto.
-
-### Test browser
-
-Al termine, lo script stampa una URL OIDC con `kc_idp_hint=<alias>` da aprire nel browser.
-
-Il risultato atteso puo' essere uno di questi:
-
-1. redirect corretto verso GEL e login completato: buon segnale che il plugin e la firma sono accettati
-2. redirect verso GEL ma errore sul servizio remoto: possibile mismatch di issuer/SP abilitato oppure controlli lato tenant
-3. errore immediato in Keycloak: problema locale di configurazione, firma o certificati
-
-### Limite noto
-
-Il `p12` del kit contiene una chiave RSA da `1024` bit. Funziona bene come test legacy, ma e' una chiave debole e in alcuni ambienti potrebbe essere rifiutata da policy Java o sicurezza piu' restrittive.
-
-## Ambiguita rilevate nei documenti
-
-1. `docs/idp_metadata.xml` contiene `SPSSODescriptor` (non `IDPSSODescriptor`), quindi non e' un metadata IdP canonico.
-2. `docs/AuthnRequest_valida.xml` usa endpoint/issuer ambiente Campania, non Lombardia; i valori sono quindi ambiente-specifici.
-3. Le estensioni `ENABLE_CIE`/`CNS` compaiono nell'esempio AuthnRequest ma non sono descritte in modo completo nel PDF rev16, dove sono invece esplicite `CIEONLY`, `EIDAS`, `usoProfessionale`, `usoProfessionaleGiuridico`.
-
-Per questo motivo il plugin espone tutti i campi come configurabili e non hard-coded.
