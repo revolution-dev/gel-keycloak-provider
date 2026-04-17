@@ -213,6 +213,9 @@
   ].join("");
 
   var TOKEN_PATTERN = /^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/;
+  var ROUTE_POLL_INTERVAL_MS = 1000;
+  var FAST_SYNC_DELAY_MS = 80;
+  var FAST_SYNC_ATTEMPTS = 20;
 
   var capturedToken = null;
   var capturedRefreshToken = null;
@@ -222,6 +225,8 @@
   var currentRouteKey = null;
   var observedTokenVersion = 0;
   var capturedMetadataCertificates = readProxyMetadataCertificates();
+  var fastSyncTimerId = null;
+  var remainingFastSyncAttempts = 0;
 
   interceptFetch();
   interceptXmlHttpRequest();
@@ -229,9 +234,37 @@
 
   function bootstrap() {
     runOnce();
-    window.addEventListener("hashchange", runOnce);
-    window.addEventListener("popstate", runOnce);
-    window.setInterval(runOnce, 1000);
+    window.addEventListener("hashchange", handleRouteSignal);
+    window.addEventListener("popstate", handleRouteSignal);
+    window.setInterval(runOnce, ROUTE_POLL_INTERVAL_MS);
+  }
+
+  function handleRouteSignal() {
+    runOnce();
+    scheduleFastSync();
+  }
+
+  function scheduleFastSync() {
+    remainingFastSyncAttempts = FAST_SYNC_ATTEMPTS;
+    if (fastSyncTimerId !== null) {
+      return;
+    }
+    fastSyncTimerId = window.setTimeout(runFastSyncStep, FAST_SYNC_DELAY_MS);
+  }
+
+  function runFastSyncStep() {
+    runOnce();
+
+    remainingFastSyncAttempts -= 1;
+    if (remainingFastSyncAttempts > 0) {
+      fastSyncTimerId = window.setTimeout(runFastSyncStep, FAST_SYNC_DELAY_MS);
+      return;
+    }
+
+    if (fastSyncTimerId !== null) {
+      window.clearTimeout(fastSyncTimerId);
+      fastSyncTimerId = null;
+    }
   }
 
   function runOnce() {
@@ -240,9 +273,6 @@
 
     if (!context || context.action !== ROUTE_ACTION_DETAILS || context.providerId !== TARGET_PROVIDER_ID) {
       removeCustomTab();
-      applyNativeSectionVisibility({
-        tab: SETTINGS_TAB
-      });
       restoreJumpToSectionVisibility();
       removePanel();
       currentRouteKey = null;
@@ -560,7 +590,7 @@
   }
 
   function isGelParamsView(context) {
-    return context.tab === SETTINGS_TAB && context.query[GEL_TAB_QUERY_FLAG] === GEL_TAB_QUERY_VALUE;
+    return context.query[GEL_TAB_QUERY_FLAG] === GEL_TAB_QUERY_VALUE;
   }
 
   function renderPanel(context) {
@@ -874,12 +904,21 @@
 
     customTabAnchor.onclick = function (event) {
       event.preventDefault();
+      if (typeof event.stopPropagation === "function") {
+        event.stopPropagation();
+      }
+      if (typeof event.stopImmediatePropagation === "function") {
+        event.stopImmediatePropagation();
+      }
       navigateToGelParams(context);
     };
 
     updateSettingsTabTarget(settingsTabAnchor, context);
     updateTabVisualState(settingsTabItem, settingsTabAnchor, !isGelParamsView(context) && context.tab === SETTINGS_TAB);
     updateTabVisualState(customTabItem, customTabAnchor, isGelParamsView(context));
+    if (isGelParamsView(context)) {
+      forceSingleActiveGelTab(customTabItem);
+    }
   }
 
   function removeCustomTab() {
@@ -912,6 +951,12 @@
         return;
       }
       event.preventDefault();
+      if (typeof event.stopPropagation === "function") {
+        event.stopPropagation();
+      }
+      if (typeof event.stopImmediatePropagation === "function") {
+        event.stopImmediatePropagation();
+      }
       navigateToSettings(context);
     };
   }
@@ -933,6 +978,27 @@
     tabAnchor.removeAttribute("aria-current");
   }
 
+  function forceSingleActiveGelTab(customTabItem) {
+    if (!customTabItem || !customTabItem.parentElement) {
+      return;
+    }
+
+    var siblings = customTabItem.parentElement.children;
+    for (var i = 0; i < siblings.length; i++) {
+      var tabItem = siblings[i];
+      if (!tabItem || tabItem === customTabItem) {
+        continue;
+      }
+
+      var tabAnchor = tabItem.querySelector("a, button");
+      if (!tabAnchor) {
+        continue;
+      }
+
+      updateTabVisualState(tabItem, tabAnchor, false);
+    }
+  }
+
   function toggleCurrentClass(node, active) {
     if (!node) {
       return;
@@ -944,7 +1010,8 @@
   }
 
   function buildGelParamsUrl(context) {
-    return buildConsoleUrl(context, SETTINGS_TAB, withMergedQuery(context.query, {
+    var targetTab = context.tab || SETTINGS_TAB;
+    return buildConsoleUrl(context, targetTab, withMergedQuery(context.query, {
       [GEL_TAB_QUERY_FLAG]: GEL_TAB_QUERY_VALUE
     }));
   }
@@ -956,10 +1023,12 @@
   }
 
   function navigateToGelParams(context) {
+    scheduleFastSync();
     navigateWithinConsole(buildGelParamsUrl(context), context.isHashNavigation);
   }
 
   function navigateToSettings(context) {
+    scheduleFastSync();
     navigateWithinConsole(buildSettingsUrl(context), context.isHashNavigation);
   }
 
@@ -974,6 +1043,7 @@
       if (String(window.location.hash || "") !== "#" + url) {
         window.location.hash = "#" + url;
       }
+      scheduleFastSync();
       return;
     }
 
@@ -981,6 +1051,7 @@
     if (currentLocation !== url) {
       window.history.pushState({}, "", url);
       runOnce();
+      scheduleFastSync();
     }
   }
 
