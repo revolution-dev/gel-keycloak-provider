@@ -1,6 +1,7 @@
 package it.rdev.keycloak.gel.broker.saml;
 
 import java.util.Arrays;
+import java.util.Base64;
 import java.util.Collections;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
@@ -8,6 +9,14 @@ import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.regex.Pattern;
+import java.security.KeyFactory;
+import java.security.PrivateKey;
+import java.security.PublicKey;
+import java.security.interfaces.RSAPrivateCrtKey;
+import java.security.spec.PKCS8EncodedKeySpec;
+import java.security.spec.RSAPublicKeySpec;
+import java.security.cert.CertificateFactory;
+import java.security.cert.X509Certificate;
 
 import javax.ws.rs.core.Response;
 import javax.ws.rs.core.UriBuilder;
@@ -65,6 +74,13 @@ public class GelSamlIdentityProvider extends SAMLIdentityProvider {
     private static final String SPID_LEVEL_L3 = "L3";
     private static final String SPID_LEVEL_URI_L2 = "https://www.spid.gov.it/SpidL2";
     private static final String SPID_LEVEL_URI_L3 = "https://www.spid.gov.it/SpidL3";
+    private static final String KEY_TYPE_RSA = "RSA";
+    private static final String PEM_BEGIN_PRIVATE_KEY = "-----BEGIN PRIVATE KEY-----";
+    private static final String PEM_END_PRIVATE_KEY = "-----END PRIVATE KEY-----";
+    private static final String PEM_BEGIN_RSA_PRIVATE_KEY = "-----BEGIN RSA PRIVATE KEY-----";
+    private static final String PEM_END_RSA_PRIVATE_KEY = "-----END RSA PRIVATE KEY-----";
+    private static final String PEM_BEGIN_CERTIFICATE = "-----BEGIN CERTIFICATE-----";
+    private static final String PEM_END_CERTIFICATE = "-----END CERTIFICATE-----";
 
     private static final Pattern EXTENSION_NAME_PATTERN = Pattern.compile("[A-Za-z_][A-Za-z0-9_.-]*");
 
@@ -143,14 +159,17 @@ public class GelSamlIdentityProvider extends SAMLIdentityProvider {
             boolean postBinding = config.isPostBindingAuthnRequest();
 
             if (config.isWantAuthnRequestsSigned()) {
-                KeyManager.ActiveRsaKey keys = session.keys().getActiveRsaKey(realm);
-                String keyName = config.getXmlSigKeyInfoKeyNameTransformer().getKeyName(keys.getKid(), keys.getCertificate());
-                binding.signWith(keyName, keys.getPrivateKey(), keys.getPublicKey(), keys.getCertificate())
+                SigningMaterial signingMaterial = resolveSigningMaterial(realm, config);
+                binding.signWith(
+                                signingMaterial.getKeyName(),
+                                signingMaterial.getPrivateKey(),
+                                signingMaterial.getPublicKey(),
+                                signingMaterial.getCertificate())
                         .signatureAlgorithm(getSignatureAlgorithm())
                         .signDocument();
 
                 if (!postBinding && config.isAddExtensionsElementWithKeyInfo()) {
-                    authnRequestBuilder.addExtension(new KeycloakKeySamlExtensionGenerator(keyName));
+                    authnRequestBuilder.addExtension(new KeycloakKeySamlExtensionGenerator(signingMaterial.getKeyName()));
                 }
             }
 
@@ -326,6 +345,229 @@ public class GelSamlIdentityProvider extends SAMLIdentityProvider {
         }
         String trimmed = value.trim();
         return trimmed.isEmpty() ? null : trimmed;
+    }
+
+    /**
+     * Resolves the signing material for AuthnRequest generation.
+     *
+     * <p>If GEL-specific private key and certificate are configured, those values are used only
+     * for this Identity Provider. Otherwise, realm active RSA key is used to preserve standard
+     * behavior for existing installations.</p>
+     */
+    private SigningMaterial resolveSigningMaterial(RealmModel realm, GelSamlIdentityProviderConfig config) {
+        String configuredPrivateKey = trimToNull(config.getGelSigningPrivateKeyPem());
+        String configuredCertificate = trimToNull(config.getGelSigningCertificatePem());
+
+        if (configuredPrivateKey == null && configuredCertificate == null) {
+            KeyManager.ActiveRsaKey realmKey = session.keys().getActiveRsaKey(realm);
+            String keyName = config.getXmlSigKeyInfoKeyNameTransformer()
+                    .getKeyName(realmKey.getKid(), realmKey.getCertificate());
+            return new SigningMaterial(keyName, realmKey.getPrivateKey(), realmKey.getPublicKey(), realmKey.getCertificate());
+        }
+
+        if (configuredPrivateKey == null || configuredCertificate == null) {
+            throw new IdentityBrokerException(String.format(
+                    "GEL custom signing for IdP '%s' requires both private key and certificate.", config.getAlias()));
+        }
+
+        try {
+            X509Certificate x509Certificate = parseCertificate(configuredCertificate);
+            PrivateKey privateKey = parsePrivateKey(configuredPrivateKey);
+            PublicKey publicKey = extractPublicKey(privateKey, x509Certificate);
+            String keyName = config.getXmlSigKeyInfoKeyNameTransformer().getKeyName(
+                    "gel-custom-" + config.getAlias(),
+                    x509Certificate);
+            return new SigningMaterial(keyName, privateKey, publicKey, x509Certificate);
+        } catch (Exception exception) {
+            throw new IdentityBrokerException(String.format(
+                    "Invalid GEL custom signing material for IdP '%s'.", config.getAlias()), exception);
+        }
+    }
+
+    /**
+     * Parses X509 certificate from PEM payload.
+     */
+    private X509Certificate parseCertificate(String certificatePem) throws Exception {
+        String base64Body = extractPemBodyOrRaw(certificatePem, PEM_BEGIN_CERTIFICATE, PEM_END_CERTIFICATE);
+        byte[] certificateBytes = Base64.getDecoder().decode(base64Body);
+        CertificateFactory certificateFactory = CertificateFactory.getInstance("X.509");
+        return (X509Certificate) certificateFactory.generateCertificate(new java.io.ByteArrayInputStream(certificateBytes));
+    }
+
+    /**
+     * Parses private RSA key from PKCS#8 or PKCS#1 PEM payload.
+     */
+    private PrivateKey parsePrivateKey(String privateKeyPem) throws Exception {
+        byte[] privateKeyBytes;
+        if (privateKeyPem.contains(PEM_BEGIN_RSA_PRIVATE_KEY)) {
+            String body = extractPemBodyOrRaw(privateKeyPem, PEM_BEGIN_RSA_PRIVATE_KEY, PEM_END_RSA_PRIVATE_KEY);
+            byte[] pkcs1Bytes = Base64.getDecoder().decode(body);
+            privateKeyBytes = wrapPkcs1ToPkcs8(pkcs1Bytes);
+        } else {
+            String body = extractPemBodyOrRaw(privateKeyPem, PEM_BEGIN_PRIVATE_KEY, PEM_END_PRIVATE_KEY);
+            privateKeyBytes = Base64.getDecoder().decode(body);
+        }
+
+        return KeyFactory.getInstance(KEY_TYPE_RSA).generatePrivate(new PKCS8EncodedKeySpec(privateKeyBytes));
+    }
+
+    /**
+     * Returns the effective public key to be passed to the SAML signer.
+     */
+    private PublicKey extractPublicKey(PrivateKey privateKey, X509Certificate certificate) throws Exception {
+        if (privateKey instanceof RSAPrivateCrtKey) {
+            RSAPrivateCrtKey rsaPrivateCrtKey = (RSAPrivateCrtKey) privateKey;
+            RSAPublicKeySpec publicKeySpec = new RSAPublicKeySpec(
+                    rsaPrivateCrtKey.getModulus(),
+                    rsaPrivateCrtKey.getPublicExponent());
+            return KeyFactory.getInstance(KEY_TYPE_RSA).generatePublic(publicKeySpec);
+        }
+        return certificate.getPublicKey();
+    }
+
+    /**
+     * Extracts the base64 body of a PEM block.
+     */
+    private String extractPemBody(String source, String beginMarker, String endMarker) {
+        int beginIndex = source.indexOf(beginMarker);
+        int endIndex = source.indexOf(endMarker);
+        if (beginIndex < 0 || endIndex < 0 || endIndex <= beginIndex) {
+            throw new IllegalArgumentException("Missing PEM block markers.");
+        }
+
+        int contentStart = beginIndex + beginMarker.length();
+        String body = source.substring(contentStart, endIndex).replaceAll("\\s+", "");
+        if (body.isEmpty()) {
+            throw new IllegalArgumentException("Empty PEM payload.");
+        }
+
+        return body;
+    }
+
+    /**
+     * Supports both full PEM blocks and raw base64 payloads.
+     */
+    private String extractPemBodyOrRaw(String source, String beginMarker, String endMarker) {
+        if (source == null) {
+            throw new IllegalArgumentException("Missing key material.");
+        }
+
+        if (source.contains(beginMarker) && source.contains(endMarker)) {
+            return extractPemBody(source, beginMarker, endMarker);
+        }
+
+        String normalized = source.replaceAll("\\s+", "");
+        if (normalized.isEmpty()) {
+            throw new IllegalArgumentException("Empty key material.");
+        }
+        return normalized;
+    }
+
+    /**
+     * Wraps a PKCS#1 RSAPrivateKey ASN.1 sequence into a PKCS#8 PrivateKeyInfo envelope.
+     */
+    private byte[] wrapPkcs1ToPkcs8(byte[] pkcs1Bytes) {
+        final byte[] rsaAlgorithmIdentifier = new byte[] {
+                0x30, 0x0d,
+                0x06, 0x09,
+                0x2a, (byte) 0x86, 0x48, (byte) 0x86, (byte) 0xf7, 0x0d, 0x01, 0x01, 0x01,
+                0x05, 0x00
+        };
+
+        byte[] versionInteger = new byte[] { 0x02, 0x01, 0x00 };
+        byte[] privateKeyOctetString = encodeDerOctetString(pkcs1Bytes);
+        byte[] privateKeyInfoSequence = concat(versionInteger, rsaAlgorithmIdentifier, privateKeyOctetString);
+
+        return encodeDerSequence(privateKeyInfoSequence);
+    }
+
+    private byte[] encodeDerSequence(byte[] value) {
+        return encodeDerConstructed((byte) 0x30, value);
+    }
+
+    private byte[] encodeDerOctetString(byte[] value) {
+        return encodeDerConstructed((byte) 0x04, value);
+    }
+
+    private byte[] encodeDerConstructed(byte tag, byte[] value) {
+        byte[] lengthBytes = encodeDerLength(value.length);
+        byte[] encoded = new byte[1 + lengthBytes.length + value.length];
+        encoded[0] = tag;
+        System.arraycopy(lengthBytes, 0, encoded, 1, lengthBytes.length);
+        System.arraycopy(value, 0, encoded, 1 + lengthBytes.length, value.length);
+        return encoded;
+    }
+
+    private byte[] encodeDerLength(int length) {
+        if (length < 0x80) {
+            return new byte[] { (byte) length };
+        }
+
+        int tempLength = length;
+        int byteCount = 0;
+        while (tempLength > 0) {
+            byteCount++;
+            tempLength >>= 8;
+        }
+
+        byte[] encoded = new byte[1 + byteCount];
+        encoded[0] = (byte) (0x80 | byteCount);
+
+        for (int i = byteCount; i > 0; i--) {
+            encoded[i] = (byte) (length & 0xff);
+            length >>= 8;
+        }
+
+        return encoded;
+    }
+
+    private byte[] concat(byte[]... arrays) {
+        int totalLength = 0;
+        for (byte[] array : arrays) {
+            totalLength += array.length;
+        }
+
+        byte[] combined = new byte[totalLength];
+        int offset = 0;
+        for (byte[] array : arrays) {
+            System.arraycopy(array, 0, combined, offset, array.length);
+            offset += array.length;
+        }
+
+        return combined;
+    }
+
+    /**
+     * Immutable signing key material used to create signed AuthnRequest messages.
+     */
+    private static final class SigningMaterial {
+        private final String keyName;
+        private final PrivateKey privateKey;
+        private final PublicKey publicKey;
+        private final X509Certificate certificate;
+
+        private SigningMaterial(String keyName, PrivateKey privateKey, PublicKey publicKey, X509Certificate certificate) {
+            this.keyName = keyName;
+            this.privateKey = privateKey;
+            this.publicKey = publicKey;
+            this.certificate = certificate;
+        }
+
+        private String getKeyName() {
+            return keyName;
+        }
+
+        private PrivateKey getPrivateKey() {
+            return privateKey;
+        }
+
+        private PublicKey getPublicKey() {
+            return publicKey;
+        }
+
+        private X509Certificate getCertificate() {
+            return certificate;
+        }
     }
 
     /**

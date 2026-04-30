@@ -167,6 +167,20 @@ public class GelSamlIdentityProviderFactory extends SAMLIdentityProviderFactory 
                 Boolean.FALSE));
 
         properties.add(new ProviderConfigProperty(
+                GelSamlIdentityProviderConfig.GEL_SIGNING_PRIVATE_KEY_PEM,
+                "GEL Signing Private Key (PEM)",
+                "Chiave privata RSA in formato PEM usata solo per firmare AuthnRequest di questo IdP GEL. Se assente, viene usata la chiave RSA del realm.",
+                ProviderConfigProperty.TEXT_TYPE,
+                null));
+
+        properties.add(new ProviderConfigProperty(
+                GelSamlIdentityProviderConfig.GEL_SIGNING_CERTIFICATE_PEM,
+                "GEL Signing Certificate (PEM)",
+                "Certificato X509 in formato PEM associato alla chiave privata GEL usata per la firma AuthnRequest.",
+                ProviderConfigProperty.TEXT_TYPE,
+                null));
+
+        properties.add(new ProviderConfigProperty(
                 SAMLIdentityProviderConfig.WANT_AUTHN_REQUESTS_SIGNED,
                 "Sign AuthnRequest",
                 "Firma AuthnRequest verso GEL.",

@@ -26,7 +26,8 @@ Il provider `gel-saml` aggiunge rispetto al SAML standard:
 4. Set attributi GEL (`gelAttributeSet`, con override di `AttributeConsumingServiceIndex`, da `0` a `5`)
 5. Estensioni custom libere (`TAG=VALORE`, una per riga)
 6. Log opzionale della `AuthnRequest` per debug
-7. Estensione Admin Console con pagina custom `gel-saml` per configurare i parametri GEL aggiuntivi
+7. Firma AuthnRequest per-singolo IdP GEL con chiave privata RSA + certificato X509 configurabili nel tab GEL (fallback automatico alla chiave RSA del realm se non valorizzati)
+8. Estensione Admin Console con pagina custom `gel-saml` per configurare i parametri GEL aggiuntivi
 
 ## Struttura progetto
 
@@ -84,9 +85,17 @@ viene mostrato un pannello dedicato **Configurazione GEL SAML** con i parametri:
 - `GEL Attribute Set` (`attributeConsumingServiceIndex`)
 - `SPID Level` (`gelSpidLevel`)
 - `NameID SPNameQualifier` (`gelNameIdSpNameQualifier`)
+- `Private RSA Key (PEM)` (`gelSigningPrivateKeyPem`, opzionale)
+- `Signing Certificate (PEM)` (`gelSigningCertificatePem`, opzionale)
 - estensioni booleane GEL (`ENABLE_CIE`, `CNS`, `CIEONLY`, `EIDAS`, `usoProfessionale`, `usoProfessionaleGiuridico`)
 - `Custom GEL Extensions`
 - `Log AuthnRequest`
+
+Comportamento firma AuthnRequest:
+- se `Private RSA Key (PEM)` e `Signing Certificate (PEM)` sono valorizzati entrambi, il provider `gel-saml` firma con questo materiale solo per quell'IdP;
+- se non sono valorizzati, utilizza la chiave RSA attiva del realm.
+- la sezione `Request Signing` del tab GEL viene mostrata solo quando `Want AuthnRequests signed` risulta attivo.
+- il campo `Private RSA Key (PEM)` viene mascherato in UI dopo il salvataggio.
 
 Il pulsante `Salva parametri GEL` aggiorna la configurazione `config` dell'Identity Provider via Admin REST.
 
@@ -154,3 +163,55 @@ Tutti i file necessari ad avviare l'ambiente di test sono disponibili all'intern
 
 Una volta creato l'ambiente di test basta incollare l'URL ottenuto dallo script di configurazione di keycloak in un browser web per effettuare il test
 
+---
+
+## Supporto
+
+Questo è un progetto open source fornito senza alcuna garanzia di supporto.
+
+Per utilizzo in ambienti di produzione:
+
+* è fortemente raccomandato effettuare test approfonditi
+* verificare la compatibilità con la versione di Keycloak utilizzata
+* validare attentamente la configurazione dei flussi di autenticazione
+
+---
+
+## Disclaimer
+
+Questo software è fornito “così com’è”, senza garanzie di alcun tipo, esplicite o implicite, incluse ma non limitate a:
+
+* idoneità per uno scopo specifico
+* assenza di difetti
+* non violazione di diritti
+
+L’utilizzo in ambienti di produzione è a proprio rischio.
+
+Gli autori non sono responsabili per:
+
+* interruzioni di servizio
+* configurazioni errate
+* problemi di sicurezza derivanti da uso improprio
+* incompatibilità con versioni di Keycloak
+
+---
+
+## Licenza
+
+Distribuito sotto licenza Apache License 2.0.
+
+Vedi il file LICENSE per i dettagli.
+
+---
+
+## Contributi
+
+I contributi sono benvenuti. È possibile aprire una issue o inviare una pull request.
+
+---
+
+## Note
+
+Questo progetto non è un’implementazione ufficiale di GEL e non deve essere considerato una soluzione certificata o pronta per ambienti di produzione senza adeguata validazione.
+
+---

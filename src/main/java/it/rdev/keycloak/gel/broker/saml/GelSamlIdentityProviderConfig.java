@@ -24,6 +24,8 @@ public class GelSamlIdentityProviderConfig extends SAMLIdentityProviderConfig {
 
     public static final String GEL_CUSTOM_EXTENSIONS = "gelCustomExtensions";
     public static final String GEL_LOG_AUTHN_REQUEST = "gelLogAuthnRequest";
+    public static final String GEL_SIGNING_PRIVATE_KEY_PEM = "gelSigningPrivateKeyPem";
+    public static final String GEL_SIGNING_CERTIFICATE_PEM = "gelSigningCertificatePem";
 
     public GelSamlIdentityProviderConfig() {
     }
@@ -146,6 +148,28 @@ public class GelSamlIdentityProviderConfig extends SAMLIdentityProviderConfig {
 
     public void setGelLogAuthnRequest(boolean value) {
         putBoolean(GEL_LOG_AUTHN_REQUEST, value);
+    }
+
+    /**
+     * @return Optional PEM/private-key payload used only for this GEL IdP AuthnRequest signing.
+     */
+    public String getGelSigningPrivateKeyPem() {
+        return getConfig().get(GEL_SIGNING_PRIVATE_KEY_PEM);
+    }
+
+    public void setGelSigningPrivateKeyPem(String privateKeyPem) {
+        putOrRemove(GEL_SIGNING_PRIVATE_KEY_PEM, privateKeyPem);
+    }
+
+    /**
+     * @return Optional PEM/certificate payload used only for this GEL IdP AuthnRequest signing.
+     */
+    public String getGelSigningCertificatePem() {
+        return getConfig().get(GEL_SIGNING_CERTIFICATE_PEM);
+    }
+
+    public void setGelSigningCertificatePem(String certificatePem) {
+        putOrRemove(GEL_SIGNING_CERTIFICATE_PEM, certificatePem);
     }
 
     private boolean readBoolean(String key) {

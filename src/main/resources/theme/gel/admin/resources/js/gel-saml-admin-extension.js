@@ -34,7 +34,12 @@
   var DEFAULT_GEL_ATTRIBUTE_SET = "4";
   var DEFAULT_SPID_LEVEL = "L2";
   var FIELD_SECTION_GENERAL = "general";
+  var FIELD_SECTION_SIGNING = "signing";
   var FIELD_SECTION_EXTENSIONS = "extensions";
+  var SIGNING_SECTION_ID = "gel-saml-signing-section";
+  var STANDARD_SIGN_AUTHN_REQUESTS_KEY = "wantAuthnRequestsSigned";
+  var PRIVATE_KEY_MASK_VALUE = "******** (configurata)";
+  var PRIVATE_KEY_MASK_ATTRIBUTE = "data-gel-private-key-masked";
 
   var GEL_KEYS = {
     attributeSet: "gelAttributeSet",
@@ -47,7 +52,9 @@
     usoProfessionale: "gelUsoProfessionale",
     usoProfessionaleGiuridico: "gelUsoProfessionaleGiuridico",
     customExtensions: "gelCustomExtensions",
-    logAuthnRequest: "gelLogAuthnRequest"
+    logAuthnRequest: "gelLogAuthnRequest",
+    signingPrivateKeyPem: "gelSigningPrivateKeyPem",
+    signingCertificatePem: "gelSigningCertificatePem"
   };
 
   var BOOLEAN_FIELDS = [
@@ -87,6 +94,24 @@
       label: "NameID SPNameQualifier",
       helpText: "Valore opzionale da valorizzare in samlp:NameIDPolicy@SPNameQualifier.",
       placeholder: "es. https://sp.example.it"
+    },
+    {
+      type: "textarea",
+      id: GEL_KEYS.signingPrivateKeyPem,
+      section: FIELD_SECTION_SIGNING,
+      label: "Private RSA Key (PEM)",
+      helpText: "Chiave privata usata solo per la firma AuthnRequest di questo IdP GEL. Se vuota, viene usata la chiave del realm.",
+      placeholder: "-----BEGIN PRIVATE KEY-----",
+      rows: "9"
+    },
+    {
+      type: "textarea",
+      id: GEL_KEYS.signingCertificatePem,
+      section: FIELD_SECTION_SIGNING,
+      label: "Signing Certificate (PEM)",
+      helpText: "Certificato X509 associato alla chiave privata GEL. Se non valorizzato insieme alla chiave privata, la firma usa la chiave del realm.",
+      placeholder: "-----BEGIN CERTIFICATE-----",
+      rows: "9"
     },
     {
       type: "toggle",
@@ -651,11 +676,23 @@
     var extensionFields = FIELD_DEFINITIONS.filter(function (field) {
       return field.section === FIELD_SECTION_EXTENSIONS;
     });
+    var signingFields = FIELD_DEFINITIONS.filter(function (field) {
+      return field.section === FIELD_SECTION_SIGNING;
+    });
 
     var markup = TEMPLATE_ENGINE.render(SECTION_TEMPLATE, {
       title: "General Params",
       contentMarkup: renderFieldGroups(baseFields)
     });
+
+    if (signingFields.length) {
+      markup += [
+        '<section id="' + SIGNING_SECTION_ID + '" class="gel-saml-section">',
+        '  <h1 class="gel-saml-section__title">Request Signing</h1>',
+        renderFieldGroups(signingFields),
+        '</section>'
+      ].join("");
+    }
 
     if (extensionFields.length) {
       markup += TEMPLATE_ENGINE.render(SECTION_TEMPLATE, {
@@ -759,7 +796,23 @@
       });
     }
 
+    bindPrivateKeyMaskInteractions(panel);
     syncAllToggleGroups(panel);
+  }
+
+  function bindPrivateKeyMaskInteractions(panel) {
+    var privateKeyNode = panel.querySelector("#" + GEL_KEYS.signingPrivateKeyPem);
+    if (!privateKeyNode || privateKeyNode.getAttribute("data-gel-private-key-mask-bound") === "true") {
+      return;
+    }
+
+    privateKeyNode.setAttribute("data-gel-private-key-mask-bound", "true");
+    privateKeyNode.addEventListener("focus", function () {
+      unmaskPrivateKeyInput(privateKeyNode);
+    });
+    privateKeyNode.addEventListener("paste", function () {
+      unmaskPrivateKeyInput(privateKeyNode);
+    });
   }
 
   function removePanel() {
@@ -1010,7 +1063,7 @@
   }
 
   function buildGelParamsUrl(context) {
-    var targetTab = context.tab || SETTINGS_TAB;
+    var targetTab = SETTINGS_TAB;
     return buildConsoleUrl(context, targetTab, withMergedQuery(context.query, {
       [GEL_TAB_QUERY_FLAG]: GEL_TAB_QUERY_VALUE
     }));
@@ -1115,11 +1168,16 @@
     setStatus("Salvataggio configurazione GEL in corso...", "info");
 
     try {
+      var gelValues = readFormValues();
+      validateSigningPair(gelValues);
+
       var representation = await loadIdentityProviderRepresentation(context.realm, context.alias);
       var existingConfig = representation.config || {};
-      representation.config = mergeGelConfig(existingConfig, readFormValues());
+      resolveMaskedPrivateKeyValue(gelValues, existingConfig);
+      representation.config = mergeGelConfig(existingConfig, gelValues);
 
       await updateIdentityProviderRepresentation(context.realm, context.alias, representation);
+      applyPrivateKeyMaskIfConfigured(gelValues);
       setStatus("Configurazione GEL salvata con successo.", "success");
     } catch (error) {
       setStatus("Errore durante il salvataggio GEL: " + toErrorMessage(error), "error");
@@ -1135,12 +1193,15 @@
 
     selectValue(GEL_KEYS.spidLevel, readConfigValue(config, GEL_KEYS.spidLevel, DEFAULT_SPID_LEVEL));
     inputValue(GEL_KEYS.spNameQualifier, readConfigValue(config, GEL_KEYS.spNameQualifier, ""));
+    maskPrivateKeyInput(readConfigValue(config, GEL_KEYS.signingPrivateKeyPem, ""));
+    inputValue(GEL_KEYS.signingCertificatePem, readConfigValue(config, GEL_KEYS.signingCertificatePem, ""));
 
     BOOLEAN_FIELDS.forEach(function (field) {
       checkboxValue(field, readBoolean(config[field]));
     });
 
     inputValue(GEL_KEYS.customExtensions, readConfigValue(config, GEL_KEYS.customExtensions, ""));
+    updateSigningSectionVisibility(config);
   }
 
   function readFormValues() {
@@ -1151,6 +1212,8 @@
     values[STANDARD_SAML_ATTRIBUTE_SET_KEY] = attributeSet;
     values[GEL_KEYS.spidLevel] = valueOf(GEL_KEYS.spidLevel);
     values[GEL_KEYS.spNameQualifier] = valueOf(GEL_KEYS.spNameQualifier);
+    values[GEL_KEYS.signingPrivateKeyPem] = valueOf(GEL_KEYS.signingPrivateKeyPem);
+    values[GEL_KEYS.signingCertificatePem] = valueOf(GEL_KEYS.signingCertificatePem);
     values[GEL_KEYS.customExtensions] = valueOf(GEL_KEYS.customExtensions);
 
     BOOLEAN_FIELDS.forEach(function (field) {
@@ -1180,6 +1243,95 @@
     });
 
     return merged;
+  }
+
+  function validateSigningPair(gelValues) {
+    var privateKey = trimToNull(gelValues[GEL_KEYS.signingPrivateKeyPem]);
+    var certificate = trimToNull(gelValues[GEL_KEYS.signingCertificatePem]);
+    var hasPrivateKey = Boolean(privateKey);
+    var hasCertificate = Boolean(certificate);
+
+    if (hasPrivateKey === hasCertificate) {
+      return;
+    }
+
+    throw new Error("Per la firma custom GEL devi valorizzare sia Private RSA Key (PEM) sia Signing Certificate (PEM), oppure lasciarli entrambi vuoti.");
+  }
+
+  function resolveMaskedPrivateKeyValue(gelValues, existingConfig) {
+    if (!gelValues || typeof gelValues !== "object") {
+      return;
+    }
+
+    if (gelValues[GEL_KEYS.signingPrivateKeyPem] !== PRIVATE_KEY_MASK_VALUE) {
+      return;
+    }
+
+    gelValues[GEL_KEYS.signingPrivateKeyPem] = readConfigValue(existingConfig || {}, GEL_KEYS.signingPrivateKeyPem, "");
+  }
+
+  function applyPrivateKeyMaskIfConfigured(gelValues) {
+    if (!gelValues || typeof gelValues !== "object") {
+      return;
+    }
+
+    var privateKeyValue = trimToNull(gelValues[GEL_KEYS.signingPrivateKeyPem]);
+    if (privateKeyValue) {
+      maskPrivateKeyInput(privateKeyValue);
+      return;
+    }
+
+    clearPrivateKeyMask();
+  }
+
+  function maskPrivateKeyInput(privateKeyValue) {
+    var privateKeyNode = document.getElementById(GEL_KEYS.signingPrivateKeyPem);
+    if (!privateKeyNode) {
+      return;
+    }
+
+    var hasValue = Boolean(trimToNull(privateKeyValue));
+    if (!hasValue) {
+      clearPrivateKeyMask();
+      return;
+    }
+
+    privateKeyNode.value = PRIVATE_KEY_MASK_VALUE;
+    privateKeyNode.setAttribute(PRIVATE_KEY_MASK_ATTRIBUTE, "true");
+  }
+
+  function clearPrivateKeyMask() {
+    var privateKeyNode = document.getElementById(GEL_KEYS.signingPrivateKeyPem);
+    if (!privateKeyNode) {
+      return;
+    }
+
+    privateKeyNode.value = "";
+    privateKeyNode.removeAttribute(PRIVATE_KEY_MASK_ATTRIBUTE);
+  }
+
+  function unmaskPrivateKeyInput(privateKeyNode) {
+    var node = privateKeyNode || document.getElementById(GEL_KEYS.signingPrivateKeyPem);
+    if (!node) {
+      return;
+    }
+
+    if (node.getAttribute(PRIVATE_KEY_MASK_ATTRIBUTE) !== "true") {
+      return;
+    }
+
+    node.value = "";
+    node.removeAttribute(PRIVATE_KEY_MASK_ATTRIBUTE);
+  }
+
+  function updateSigningSectionVisibility(config) {
+    var signingSection = document.getElementById(SIGNING_SECTION_ID);
+    if (!signingSection) {
+      return;
+    }
+
+    var signedAuthnRequest = readBoolean(readConfigValue(config || {}, STANDARD_SIGN_AUTHN_REQUESTS_KEY, "true"));
+    signingSection.hidden = !signedAuthnRequest;
   }
 
   function readAttributeSetValue(config) {
