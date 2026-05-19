@@ -55,7 +55,7 @@ PRINCIPAL_TYPE="${PRINCIPAL_TYPE:-ATTRIBUTE}"
 # field as principal because the integration kit shows it as the remote user
 # attribute used by Shibboleth.
 PRINCIPAL_ATTRIBUTE="${PRINCIPAL_ATTRIBUTE:-codiceFiscale}"
-# Keycloak 20 UserAttributeMapper#updateMetadata expects the enum constant name
+# Keycloak UserAttributeMapper#updateMetadata expects the enum constant name
 # (JBossSAMLURIConstants) rather than the raw URI value.
 SAML_ATTRIBUTE_NAME_FORMAT="${SAML_ATTRIBUTE_NAME_FORMAT:-ATTRIBUTE_FORMAT_UNSPECIFIED}"
 USERNAME_SOURCE_ATTRIBUTE="${USERNAME_SOURCE_ATTRIBUTE:-codiceFiscale}"

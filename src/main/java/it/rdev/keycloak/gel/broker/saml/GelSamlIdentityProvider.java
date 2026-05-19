@@ -18,9 +18,9 @@ import java.security.spec.RSAPublicKeySpec;
 import java.security.cert.CertificateFactory;
 import java.security.cert.X509Certificate;
 
-import javax.ws.rs.core.Response;
-import javax.ws.rs.core.UriBuilder;
-import javax.ws.rs.core.UriInfo;
+import jakarta.ws.rs.core.Response;
+import jakarta.ws.rs.core.UriBuilder;
+import jakarta.ws.rs.core.UriInfo;
 import javax.xml.stream.XMLStreamException;
 import javax.xml.stream.XMLStreamWriter;
 

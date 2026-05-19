@@ -6,16 +6,16 @@
 
     <groupId>it.rdev</groupId>
     <artifactId>gel-keycloak-provider</artifactId>
-    <version>20.0.0</version>
+    <version>26.0.0</version>
     <packaging>jar</packaging>
 
     <name>gel-keycloak-provider</name>
-    <description>Keycloak 20.0.5 custom SAML Identity Provider for GEL integration.</description>
+    <description>Keycloak 26.0.0 custom SAML Identity Provider for GEL integration.</description>
 
     <properties>
-        <maven.compiler.release>11</maven.compiler.release>
+        <maven.compiler.release>17</maven.compiler.release>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-        <keycloak.version>20.0.5</keycloak.version>
+        <keycloak.version>26.0.0</keycloak.version>
     </properties>
 
     <dependencies>

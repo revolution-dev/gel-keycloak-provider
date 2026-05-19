@@ -1,9 +1,7 @@
 package it.rdev.keycloak.gel.broker.saml;
 
 import java.io.ByteArrayInputStream;
-import java.io.ByteArrayOutputStream;
-import java.io.IOException;
-import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashSet;
@@ -49,41 +47,6 @@ public class GelSamlIdentityProviderFactory extends SAMLIdentityProviderFactory 
 
     static {
         List<ProviderConfigProperty> properties = new ArrayList<>();
-
-        properties.add(new ProviderConfigProperty(
-                SAMLIdentityProviderConfig.SINGLE_SIGN_ON_SERVICE_URL,
-                "Single Sign-On Service URL",
-                "Endpoint SSO GEL/IdP (es. .../SSOService).",
-                ProviderConfigProperty.STRING_TYPE,
-                null));
-
-        properties.add(new ProviderConfigProperty(
-                SAMLIdentityProviderConfig.SINGLE_LOGOUT_SERVICE_URL,
-                "Single Logout Service URL",
-                "Endpoint SLO remoto. Campo opzionale.",
-                ProviderConfigProperty.STRING_TYPE,
-                null));
-
-        properties.add(new ProviderConfigProperty(
-                SAMLIdentityProviderConfig.IDP_ENTITY_ID,
-                "IdP Entity ID",
-                "Entity ID del metadata IdP GEL.",
-                ProviderConfigProperty.STRING_TYPE,
-                null));
-
-        properties.add(new ProviderConfigProperty(
-                SAMLIdentityProviderConfig.ENTITY_ID,
-                "SP Entity ID (Issuer)",
-                "Entity ID da usare come Issuer nella AuthnRequest.",
-                ProviderConfigProperty.STRING_TYPE,
-                null));
-
-        properties.add(new ProviderConfigProperty(
-                SAMLIdentityProviderConfig.NAME_ID_POLICY_FORMAT,
-                "NameID Policy Format",
-                "Formato NameID da inviare nel NameIDPolicy.",
-                ProviderConfigProperty.STRING_TYPE,
-                JBossSAMLURIConstants.NAMEID_FORMAT_TRANSIENT.get()));
 
         ProviderConfigProperty attributeSet = new ProviderConfigProperty(
                 GelSamlIdentityProviderConfig.GEL_ATTRIBUTE_SET,
@@ -166,12 +129,14 @@ public class GelSamlIdentityProviderFactory extends SAMLIdentityProviderFactory 
                 ProviderConfigProperty.BOOLEAN_TYPE,
                 Boolean.FALSE));
 
-        properties.add(new ProviderConfigProperty(
+        ProviderConfigProperty signingPrivateKey = new ProviderConfigProperty(
                 GelSamlIdentityProviderConfig.GEL_SIGNING_PRIVATE_KEY_PEM,
                 "GEL Signing Private Key (PEM)",
-                "Chiave privata RSA in formato PEM usata solo per firmare AuthnRequest di questo IdP GEL. Se assente, viene usata la chiave RSA del realm.",
-                ProviderConfigProperty.TEXT_TYPE,
-                null));
+                "Chiave privata RSA in formato PEM o base64 usata solo per firmare AuthnRequest di questo IdP GEL. Se assente, viene usata la chiave RSA del realm.",
+                ProviderConfigProperty.PASSWORD,
+                null);
+        signingPrivateKey.setSecret(true);
+        properties.add(signingPrivateKey);
 
         properties.add(new ProviderConfigProperty(
                 GelSamlIdentityProviderConfig.GEL_SIGNING_CERTIFICATE_PEM,
@@ -179,41 +144,6 @@ public class GelSamlIdentityProviderFactory extends SAMLIdentityProviderFactory 
                 "Certificato X509 in formato PEM associato alla chiave privata GEL usata per la firma AuthnRequest.",
                 ProviderConfigProperty.TEXT_TYPE,
                 null));
-
-        properties.add(new ProviderConfigProperty(
-                SAMLIdentityProviderConfig.WANT_AUTHN_REQUESTS_SIGNED,
-                "Sign AuthnRequest",
-                "Firma AuthnRequest verso GEL.",
-                ProviderConfigProperty.BOOLEAN_TYPE,
-                Boolean.TRUE));
-
-        properties.add(new ProviderConfigProperty(
-                SAMLIdentityProviderConfig.VALIDATE_SIGNATURE,
-                "Validate Signature",
-                "Valida la firma delle risposte SAML ricevute.",
-                ProviderConfigProperty.BOOLEAN_TYPE,
-                Boolean.TRUE));
-
-        properties.add(new ProviderConfigProperty(
-                SAMLIdentityProviderConfig.SIGNING_CERTIFICATE_KEY,
-                "Validating X509 Certificates",
-                "Certificati X509 (uno o piu') usati per validare le firme IdP.",
-                ProviderConfigProperty.TEXT_TYPE,
-                null));
-
-        properties.add(new ProviderConfigProperty(
-                SAMLIdentityProviderConfig.POST_BINDING_AUTHN_REQUEST,
-                "AuthnRequest POST Binding",
-                "Usa HTTP-POST per inviare AuthnRequest.",
-                ProviderConfigProperty.BOOLEAN_TYPE,
-                Boolean.FALSE));
-
-        properties.add(new ProviderConfigProperty(
-                SAMLIdentityProviderConfig.POST_BINDING_RESPONSE,
-                "Response POST Binding",
-                "Atteso binding HTTP-POST in risposta.",
-                ProviderConfigProperty.BOOLEAN_TYPE,
-                Boolean.TRUE));
 
         CONFIG_PROPERTIES = Collections.unmodifiableList(properties);
     }
@@ -239,12 +169,12 @@ public class GelSamlIdentityProviderFactory extends SAMLIdentityProviderFactory 
     }
 
     @Override
-    public Map<String, String> parseConfig(KeycloakSession session, InputStream inputStream) {
-        byte[] metadataBytes = readAllBytes(inputStream);
-        Map<String, String> config = super.parseConfig(session, new ByteArrayInputStream(metadataBytes));
+    public Map<String, String> parseConfig(KeycloakSession session, String metadata) {
+        byte[] metadataBytes = metadata == null ? new byte[0] : metadata.getBytes(StandardCharsets.UTF_8);
+        Map<String, String> config = super.parseConfig(session, metadata);
 
         /*
-         * Keycloak 20 metadata import can persist only a subset of X509 certificates in some
+         * Keycloak metadata import can persist only a subset of X509 certificates in some
          * SAML descriptors. GEL integration requires the full certificate set to validate
          * incoming signed responses across certificate rotations.
          */
@@ -256,28 +186,14 @@ public class GelSamlIdentityProviderFactory extends SAMLIdentityProviderFactory 
         // GEL-oriented defaults to reduce manual setup in PoC phase.
         config.putIfAbsent(SAMLIdentityProviderConfig.NAME_ID_POLICY_FORMAT, JBossSAMLURIConstants.NAMEID_FORMAT_TRANSIENT.get());
         config.putIfAbsent(SAMLIdentityProviderConfig.ATTRIBUTE_CONSUMING_SERVICE_INDEX, "4");
+        config.putIfAbsent(SAMLIdentityProviderConfig.POST_BINDING_RESPONSE, "true");
+        config.putIfAbsent(SAMLIdentityProviderConfig.POST_BINDING_AUTHN_REQUEST, "true");
+        config.putIfAbsent(SAMLIdentityProviderConfig.POST_BINDING_LOGOUT, "true");
+        config.putIfAbsent(SAMLIdentityProviderConfig.WANT_AUTHN_REQUESTS_SIGNED, "true");
         config.putIfAbsent(GelSamlIdentityProviderConfig.GEL_ATTRIBUTE_SET, "4");
         config.putIfAbsent(GelSamlIdentityProviderConfig.GEL_SPID_LEVEL, "L2");
 
         return config;
-    }
-
-    /**
-     * Reads the metadata stream fully so it can be parsed both by Keycloak standard logic and by
-     * the GEL-specific certificate extractor.
-     */
-    private byte[] readAllBytes(InputStream inputStream) {
-        try {
-            ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
-            byte[] buffer = new byte[8 * 1024];
-            int read;
-            while ((read = inputStream.read(buffer)) != -1) {
-                outputStream.write(buffer, 0, read);
-            }
-            return outputStream.toByteArray();
-        } catch (IOException exception) {
-            throw new IllegalStateException("Unable to read SAML metadata stream.", exception);
-        }
     }
 
     /**

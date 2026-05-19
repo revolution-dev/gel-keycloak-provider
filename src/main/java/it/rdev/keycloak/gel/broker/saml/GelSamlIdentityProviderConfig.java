@@ -26,6 +26,9 @@ public class GelSamlIdentityProviderConfig extends SAMLIdentityProviderConfig {
     public static final String GEL_LOG_AUTHN_REQUEST = "gelLogAuthnRequest";
     public static final String GEL_SIGNING_PRIVATE_KEY_PEM = "gelSigningPrivateKeyPem";
     public static final String GEL_SIGNING_CERTIFICATE_PEM = "gelSigningCertificatePem";
+    public static final String GEL_IDP_ENTITY_ID = "idpEntityId";
+    public static final String GEL_IDP_SSO_URL = "singleSignOnServiceUrl";
+    public static final String GEL_IDP_SLO_URL = "singleLogoutServiceUrl";
 
     public GelSamlIdentityProviderConfig() {
     }

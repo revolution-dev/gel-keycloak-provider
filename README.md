@@ -1,6 +1,13 @@
 # GEL Keycloak Provider
 
-Plugin Java/Maven per Keycloak `20.0.5` che estende il broker SAML standard con campi e comportamenti specifici GEL.
+Plugin Java/Maven per Keycloak `26.0.0` che estende il broker SAML standard con campi e comportamenti specifici GEL.
+
+## Compatibilita versioni Keycloak
+
+| Versione Keycloak | Stato compatibilita | Note |
+| --- | --- | --- |
+| `26.0.0` | Testato | Validato in ambiente Docker locale |
+| `26.5.6` | Testato | Validato in ambiente Docker locale |
 
 ## Obiettivo
 
@@ -26,8 +33,8 @@ Il provider `gel-saml` aggiunge rispetto al SAML standard:
 4. Set attributi GEL (`gelAttributeSet`, con override di `AttributeConsumingServiceIndex`, da `0` a `5`)
 5. Estensioni custom libere (`TAG=VALORE`, una per riga)
 6. Log opzionale della `AuthnRequest` per debug
-7. Firma AuthnRequest per-singolo IdP GEL con chiave privata RSA + certificato X509 configurabili nel tab GEL (fallback automatico alla chiave RSA del realm se non valorizzati)
-8. Estensione Admin Console con pagina custom `gel-saml` per configurare i parametri GEL aggiuntivi
+7. Firma AuthnRequest per-singolo IdP GEL con chiave privata RSA + certificato X509 configurabili nei campi GEL del tab `Settings` (fallback automatico alla chiave RSA del realm se non valorizzati)
+8. Estensione Admin Console minimale per riusare il form SAML nativo in fase di creazione del provider `gel-saml`
 
 ## Struttura progetto
 
@@ -37,7 +44,6 @@ Il provider `gel-saml` aggiunge rispetto al SAML standard:
 - `src/main/resources/META-INF/services/org.keycloak.broker.provider.IdentityProviderFactory`
 - `src/main/resources/theme/gel/admin/theme.properties`
 - `src/main/resources/theme/gel/admin/resources/js/gel-saml-admin-extension.js`
-- `src/main/resources/theme/gel/admin/resources/css/gel-saml-admin-extension.css`
 
 ## Build
 
@@ -48,9 +54,9 @@ mvn -DskipTests clean package
 
 Output:
 
-- `target/gel-keycloak-provider-20.0.0.jar`
+- `target/gel-keycloak-provider-<plugin-version>.jar`
 
-## Installazione su Keycloak 20.0.5
+## Installazione su Keycloak 26.x
 
 1. Copiare il jar in `providers/` della distribuzione Keycloak.
 2. Eseguire build Quarkus:
@@ -69,18 +75,19 @@ bin/kc.sh start-dev
    - `Realm Settings` -> `Themes` -> `Admin theme` -> `gel`
    - Logout/Login in Admin Console dopo la modifica tema (oppure svuotare la cache del browser)
 
-## Pagina custom Admin Console (GEL)
+## Admin Console (GEL)
 
-Nota di compatibilita Keycloak `20.0.5`:
+Nota di compatibilita Keycloak `26.x`:
 
-- nel template admin standard `keycloak.v2/admin/index.ftl` vengono inclusi i `properties.styles`, ma non i `properties.scripts`;
-- per questo motivo la pagina custom GEL usa un override di `index.ftl` nel tema `gel` che include esplicitamente `js/gel-saml-admin-extension.js`.
+- il tema `gel` eredita direttamente da `keycloak.v2`;
+- non viene piu' usato un override di `index.ftl`;
+- lo script admin serve solo ad aprire il form SAML nativo durante la creazione e salvare il provider come `gel-saml`.
 
 Con il tema `gel` attivo, quando apri:
 
 - `Identity Providers` -> provider `gel-saml` -> tab `Settings`
 
-viene mostrato un pannello dedicato **Configurazione GEL SAML** con i parametri:
+Keycloak mostra i parametri GEL direttamente nel tab nativo `Settings`:
 
 - `GEL Attribute Set` (`attributeConsumingServiceIndex`)
 - `SPID Level` (`gelSpidLevel`)
@@ -94,10 +101,8 @@ viene mostrato un pannello dedicato **Configurazione GEL SAML** con i parametri:
 Comportamento firma AuthnRequest:
 - se `Private RSA Key (PEM)` e `Signing Certificate (PEM)` sono valorizzati entrambi, il provider `gel-saml` firma con questo materiale solo per quell'IdP;
 - se non sono valorizzati, utilizza la chiave RSA attiva del realm.
-- la sezione `Request Signing` del tab GEL viene mostrata solo quando `Want AuthnRequests signed` risulta attivo.
-- il campo `Private RSA Key (PEM)` viene mascherato in UI dopo il salvataggio.
-
-Il pulsante `Salva parametri GEL` aggiorna la configurazione `config` dell'Identity Provider via Admin REST.
+- il campo `GEL Signing Private Key (PEM)` e' di tipo password/secret e non viene mostrato in chiaro dal form nativo.
+- il salvataggio usa il pulsante `Save` standard del tab `Settings`.
 
 ## Configurazione manuale da Admin Console
 
@@ -120,7 +125,7 @@ Il pulsante `Salva parametri GEL` aggiorna la configurazione `config` dell'Ident
 1. `Identity Providers` -> `Add provider` -> selezionare `GEL SAML v2.0`.
 2. Inserire in `SAML entity descriptor` l'URL che permette di ottenere i metadata dell'IdP o, in alternativa, deselezionare il flag `Use entity descriptor` ed importare il file xml contenente i metadati in `Import config from file`
 3. Impostare il valore corretto nel campo `Service provider entity ID` e modificare la gestione del `Principal type`in accordo con le proprie regole di gestione dell'utente
-4. Salvare l'IdP appena creato e procedere con le configurazioni nel tab `GEL Params`
+4. Salvare l'IdP appena creato e completare le configurazioni GEL nel tab `Settings`
 
 ## Test verso GEL di integrazione
 
@@ -149,7 +154,7 @@ Tutti i file necessari ad avviare l'ambiente di test sono disponibili all'intern
 
 1. Assicurarsi che in `GEL Kit Integrazione` sia presente la versione più aggiornata del kit di integrazione rilasciato da regione lombardia
 2. Eseguire lo script `scripts\generate-localhost-cert.sh` o generare i certificati che saranno utilizzati da keycloak per la configurazione HTTPS in `scripts\certs`
-3. Eseguire `docker compose up -d` in `test-environment` per avviare il container keycloak:20.0.5
+3. Eseguire `docker compose up -d` in `test-environment` per avviare il container Keycloak 26.x
 4. Eseguire `scripts\configure-keycloak-gel-remote.sh` per configurare keycloak. Lo script effettua le seguenti operazioni:
    - creazione del realm `gel-poc`
    - applicazione del tema `gel` al realm `master`
