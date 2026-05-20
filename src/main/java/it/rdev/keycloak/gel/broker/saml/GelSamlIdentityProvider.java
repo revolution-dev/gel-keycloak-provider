@@ -17,6 +17,8 @@ import java.security.spec.PKCS8EncodedKeySpec;
 import java.security.spec.RSAPublicKeySpec;
 import java.security.cert.CertificateFactory;
 import java.security.cert.X509Certificate;
+import java.net.URI;
+import java.net.URISyntaxException;
 
 import javax.ws.rs.core.Response;
 import javax.ws.rs.core.UriBuilder;
@@ -28,9 +30,11 @@ import org.keycloak.broker.provider.AuthenticationRequest;
 import org.keycloak.broker.provider.IdentityBrokerException;
 import org.keycloak.broker.saml.SAMLIdentityProvider;
 import org.keycloak.dom.saml.v2.protocol.AuthnRequestType;
+import org.keycloak.dom.saml.v2.protocol.LogoutRequestType;
 import org.keycloak.models.KeyManager;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.RealmModel;
+import org.keycloak.models.UserSessionModel;
 import org.keycloak.protocol.oidc.OIDCLoginProtocol;
 import org.keycloak.protocol.saml.JaxrsSAML2BindingBuilder;
 import org.keycloak.protocol.saml.SamlProtocol;
@@ -43,9 +47,11 @@ import org.keycloak.saml.SamlProtocolExtensionsAwareBuilder.NodeGenerator;
 import org.keycloak.saml.common.constants.JBossSAMLURIConstants;
 import org.keycloak.saml.common.exceptions.ProcessingException;
 import org.keycloak.saml.common.util.DocumentUtil;
+import org.keycloak.saml.processing.api.saml.v2.request.SAML2Request;
 import org.keycloak.saml.processing.core.util.KeycloakKeySamlExtensionGenerator;
 import org.keycloak.saml.validators.DestinationValidator;
 import org.keycloak.util.JsonSerialization;
+import org.keycloak.sessions.AuthenticationSessionModel;
 
 /**
  * Custom SAML Identity Provider that enriches outbound AuthnRequest messages with GEL-specific data.
@@ -208,6 +214,114 @@ public class GelSamlIdentityProvider extends SAMLIdentityProvider {
             return redirectBindingBuilder.request(destinationUrl);
         } catch (Exception e) {
             throw new IdentityBrokerException("Could not create GEL-authentication request.", e);
+        }
+    }
+
+    /**
+     * Customizes logout RelayState for GEL interoperability while preserving Keycloak behavior.
+     */
+    @Override
+    public Response keycloakInitiatedBrowserLogout(KeycloakSession session,
+                                                   UserSessionModel userSession,
+                                                   UriInfo uriInfo,
+                                                   RealmModel realm) {
+        GelSamlIdentityProviderConfig config = getGelConfig();
+        String logoutDestination = trimToNull(config.getSingleLogoutServiceUrl());
+        if (logoutDestination == null) {
+            return null;
+        }
+
+        if (config.isBackchannelSupported()) {
+            super.backchannelLogout(session, userSession, uriInfo, realm);
+            return null;
+        }
+
+        try {
+            LogoutRequestType logoutRequest = super.buildLogoutRequest(
+                    userSession,
+                    uriInfo,
+                    realm,
+                    logoutDestination);
+
+            if (logoutRequest.getDestination() != null) {
+                logoutDestination = logoutRequest.getDestination().toString();
+            }
+
+            JaxrsSAML2BindingBuilder binding = buildLogoutBindingForGel(session, userSession, realm);
+            if (config.isPostBindingLogout()) {
+                return binding.postBinding(SAML2Request.convert(logoutRequest)).request(logoutDestination);
+            }
+            return binding.redirectBinding(SAML2Request.convert(logoutRequest)).request(logoutDestination);
+        } catch (Exception exception) {
+            throw new RuntimeException(exception);
+        }
+    }
+
+    private JaxrsSAML2BindingBuilder buildLogoutBindingForGel(KeycloakSession session,
+                                                              UserSessionModel userSession,
+                                                              RealmModel realm) {
+        String relayState = resolveLogoutRelayState(session, userSession);
+        JaxrsSAML2BindingBuilder binding = new JaxrsSAML2BindingBuilder(session)
+                .relayState(relayState);
+
+        GelSamlIdentityProviderConfig config = getGelConfig();
+        if (config.isWantAuthnRequestsSigned()) {
+            KeyManager.ActiveRsaKey key = session.keys().getActiveRsaKey(realm);
+            binding.signWith(
+                            config.getXmlSigKeyInfoKeyNameTransformer().getKeyName(key.getKid(), key.getCertificate()),
+                            key.getPrivateKey(),
+                            key.getPublicKey(),
+                            key.getCertificate())
+                    .signatureAlgorithm(getSignatureAlgorithm());
+        }
+
+        return binding;
+    }
+
+    /**
+     * Resolves relay state for logout with GEL-specific priority:
+     * <ol>
+     *   <li>OIDC post_logout_redirect_uri captured by Keycloak logout flow;</li>
+     *   <li>SAML logout relay state captured in authentication client notes;</li>
+     *   <li>configured GEL Logout Return URL;</li>
+     *   <li>user session id (Keycloak default).</li>
+     * </ol>
+     */
+    private String resolveLogoutRelayState(KeycloakSession session, UserSessionModel userSession) {
+        AuthenticationSessionModel authenticationSession = session.getContext().getAuthenticationSession();
+        if (authenticationSession != null) {
+            String postLogoutRedirectUri = trimToNull(authenticationSession.getAuthNote(OIDCLoginProtocol.LOGOUT_REDIRECT_URI));
+            if (isAbsoluteHttpUrl(postLogoutRedirectUri)) {
+                return postLogoutRedirectUri;
+            }
+
+            String samlRelayState = trimToNull(authenticationSession.getClientNote(SamlProtocol.SAML_LOGOUT_RELAY_STATE));
+            if (isAbsoluteHttpUrl(samlRelayState)) {
+                return samlRelayState;
+            }
+        }
+
+        String configuredReturnUrl = trimToNull(getGelConfig().getGelLogoutReturnUrl());
+        if (isAbsoluteHttpUrl(configuredReturnUrl)) {
+            return configuredReturnUrl;
+        }
+
+        return userSession.getId();
+    }
+
+    private boolean isAbsoluteHttpUrl(String value) {
+        if (value == null) {
+            return false;
+        }
+
+        try {
+            URI uri = new URI(value);
+            String scheme = uri.getScheme();
+            return uri.isAbsolute()
+                    && scheme != null
+                    && ("http".equalsIgnoreCase(scheme) || "https".equalsIgnoreCase(scheme));
+        } catch (URISyntaxException ignored) {
+            return false;
         }
     }
 

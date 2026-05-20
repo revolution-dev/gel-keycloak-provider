@@ -24,6 +24,7 @@ public class GelSamlIdentityProviderConfig extends SAMLIdentityProviderConfig {
 
     public static final String GEL_CUSTOM_EXTENSIONS = "gelCustomExtensions";
     public static final String GEL_LOG_AUTHN_REQUEST = "gelLogAuthnRequest";
+    public static final String GEL_LOGOUT_RETURN_URL = "gelLogoutReturnUrl";
     public static final String GEL_SIGNING_PRIVATE_KEY_PEM = "gelSigningPrivateKeyPem";
     public static final String GEL_SIGNING_CERTIFICATE_PEM = "gelSigningCertificatePem";
 
@@ -148,6 +149,17 @@ public class GelSamlIdentityProviderConfig extends SAMLIdentityProviderConfig {
 
     public void setGelLogAuthnRequest(boolean value) {
         putBoolean(GEL_LOG_AUTHN_REQUEST, value);
+    }
+
+    /**
+     * @return Optional absolute URL used as RelayState fallback during logout.
+     */
+    public String getGelLogoutReturnUrl() {
+        return getConfig().get(GEL_LOGOUT_RETURN_URL);
+    }
+
+    public void setGelLogoutReturnUrl(String logoutReturnUrl) {
+        putOrRemove(GEL_LOGOUT_RETURN_URL, logoutReturnUrl);
     }
 
     /**

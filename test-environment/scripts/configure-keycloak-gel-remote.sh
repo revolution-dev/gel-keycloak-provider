@@ -24,6 +24,7 @@ ADMIN_THEME_REALM="${ADMIN_THEME_REALM:-master}"
 CLIENT_ID="${CLIENT_ID:-gel-browser-test}"
 CLIENT_NAME="${CLIENT_NAME:-GEL Browser Test}"
 CLIENT_REDIRECT_URI="${CLIENT_REDIRECT_URI:-http://localhost:8080/}"
+CLIENT_POST_LOGOUT_REDIRECT_URI="${CLIENT_POST_LOGOUT_REDIRECT_URI:-${CLIENT_REDIRECT_URI}}"
 
 IDP_ALIAS="${IDP_ALIAS:-gel-saml-remote}"
 IDP_DISPLAY_NAME="${IDP_DISPLAY_NAME:-GEL Remote Test}"
@@ -48,6 +49,7 @@ USO_PROFESSIONALE="${USO_PROFESSIONALE:-false}"
 USO_PROFESSIONALE_GIURIDICO="${USO_PROFESSIONALE_GIURIDICO:-false}"
 CUSTOM_EXTENSIONS="${CUSTOM_EXTENSIONS:-}"
 LOG_AUTHN_REQUEST="${LOG_AUTHN_REQUEST:-true}"
+GEL_LOGOUT_RETURN_URL="${GEL_LOGOUT_RETURN_URL:-${CLIENT_POST_LOGOUT_REDIRECT_URI}}"
 PRINCIPAL_TYPE="${PRINCIPAL_TYPE:-ATTRIBUTE}"
 #
 # GEL can expose attributes using IdPC-style names in the assertion consumed by
@@ -318,13 +320,14 @@ PY
 
 write_client_payload() {
   local destination="$1"
-  python3 - <<'PY' "${destination}" "${CLIENT_ID}" "${CLIENT_NAME}" "${CLIENT_REDIRECT_URI}"
+  python3 - <<'PY' "${destination}" "${CLIENT_ID}" "${CLIENT_NAME}" "${CLIENT_REDIRECT_URI}" "${CLIENT_POST_LOGOUT_REDIRECT_URI}"
 import json
 import pathlib
 import sys
 
 destination = pathlib.Path(sys.argv[1])
 redirect_uri = sys.argv[4]
+post_logout_redirect_uri = sys.argv[5]
 wildcard = redirect_uri.rstrip("/") + "/*"
 payload = {
     "clientId": sys.argv[2],
@@ -339,6 +342,9 @@ payload = {
     "webOrigins": ["+"],
     "rootUrl": redirect_uri,
     "baseUrl": redirect_uri,
+    "attributes": {
+        "post.logout.redirect.uris": post_logout_redirect_uri,
+    },
 }
 destination.write_text(json.dumps(payload, indent=2))
 PY
@@ -430,6 +436,7 @@ payload = {
         "gelUsoProfessionaleGiuridico": normalize_bool(os.environ["USO_PROFESSIONALE_GIURIDICO"]),
         "gelCustomExtensions": os.environ["CUSTOM_EXTENSIONS"],
         "gelLogAuthnRequest": normalize_bool(os.environ["LOG_AUTHN_REQUEST"]),
+        "gelLogoutReturnUrl": os.environ["GEL_LOGOUT_RETURN_URL"],
         "wantAuthnRequestsSigned": "true",
         "validateSignature": "true",
         "postBindingAuthnRequest": "true",
@@ -581,12 +588,31 @@ print(f"{base}/realms/{realm}/protocol/openid-connect/auth?{query}")
 PY
 }
 
+build_logout_url() {
+  python3 - <<'PY' "${KEYCLOAK_URL}" "${REALM}" "${CLIENT_ID}" "${CLIENT_POST_LOGOUT_REDIRECT_URI}"
+import sys
+import urllib.parse
+
+base = sys.argv[1].rstrip("/")
+realm = sys.argv[2]
+client_id = sys.argv[3]
+post_logout_redirect_uri = sys.argv[4]
+
+query = urllib.parse.urlencode({
+    "client_id": client_id,
+    "post_logout_redirect_uri": post_logout_redirect_uri,
+})
+print(f"{base}/realms/{realm}/protocol/openid-connect/logout?{query}")
+PY
+}
+
 GEL_IDP_ENTITY_ID="$(extract_metadata_value entity-id)"
 GEL_SSO_URL="$(extract_metadata_value post-sso)"
 
 export GEL_IDP_ENTITY_ID GEL_SSO_URL SP_ENTITY_ID ATTRIBUTE_SET SPID_LEVEL SP_NAME_QUALIFIER
 export ENABLE_CIE ENABLE_CNS CIE_ONLY EIDAS USO_PROFESSIONALE USO_PROFESSIONALE_GIURIDICO
 export CUSTOM_EXTENSIONS LOG_AUTHN_REQUEST PRINCIPAL_TYPE PRINCIPAL_ATTRIBUTE
+export GEL_LOGOUT_RETURN_URL
 
 REALM_RESPONSE="${TMP_DIR}/realm.json"
 REALM_HTTP_CODE="$(api_call GET "/admin/realms/${REALM}" "" "${REALM_RESPONSE}")"
@@ -700,6 +726,7 @@ write_idp_user_attribute_mapper_payload "${EMAIL_MAPPER_PAYLOAD}" "gel-email-fro
 upsert_idp_mapper "gel-email-from-${EMAIL_SOURCE_ATTRIBUTE}" "${EMAIL_MAPPER_PAYLOAD}"
 
 TEST_URL="$(build_test_url)"
+LOGOUT_URL="$(build_logout_url)"
 
 cat <<EOF
 
@@ -734,5 +761,11 @@ NameID SPNameQualifier:
 
 Test URL:
   ${TEST_URL}
+
+Logout URL:
+  ${LOGOUT_URL}
+
+GEL Logout Return URL:
+  ${GEL_LOGOUT_RETURN_URL}
 
 EOF

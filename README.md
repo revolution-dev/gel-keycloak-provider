@@ -85,6 +85,7 @@ viene mostrato un pannello dedicato **Configurazione GEL SAML** con i parametri:
 - `GEL Attribute Set` (`attributeConsumingServiceIndex`)
 - `SPID Level` (`gelSpidLevel`)
 - `NameID SPNameQualifier` (`gelNameIdSpNameQualifier`)
+- `GEL Logout Return URL` (`gelLogoutReturnUrl`, opzionale)
 - `Private RSA Key (PEM)` (`gelSigningPrivateKeyPem`, opzionale)
 - `Signing Certificate (PEM)` (`gelSigningCertificatePem`, opzionale)
 - estensioni booleane GEL (`ENABLE_CIE`, `CNS`, `CIEONLY`, `EIDAS`, `usoProfessionale`, `usoProfessionaleGiuridico`)
@@ -98,6 +99,14 @@ Comportamento firma AuthnRequest:
 - il campo `Private RSA Key (PEM)` viene mascherato in UI dopo il salvataggio.
 
 Il pulsante `Salva parametri GEL` aggiorna la configurazione `config` dell'Identity Provider via Admin REST.
+
+Comportamento logout (SLO verso GEL):
+- il `RelayState` viene valorizzato con priorita:
+  1. `post_logout_redirect_uri` (logout da client OIDC, se presente)
+  2. `SAML_LOGOUT_RELAY_STATE` (logout da client SAML, se presente)
+  3. `GEL Logout Return URL` (campo opzionale nel tab GEL Params)
+  4. fallback tecnico: `userSessionId`
+- vengono usati come `RelayState` applicativo solo valori validi come URL assolute `http/https`.
 
 ## Configurazione manuale da Admin Console
 
@@ -157,7 +166,7 @@ Tutti i file necessari ad avviare l'ambiente di test sono disponibili all'intern
    - creazione client `gel-browser-test`
    - creazione dell'identity provider `gel-saml-remote` di tipo `gel-saml`
    - creazione dei mappers per il nuovo IdP
-   - visualizzazione dell'URL di test per verificare il funzionamento
+   - visualizzazione dell'URL di test login e logout per verificare il funzionamento
 
 ### Esecuzione del test
 

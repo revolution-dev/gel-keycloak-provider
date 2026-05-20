@@ -45,6 +45,7 @@
     attributeSet: "gelAttributeSet",
     spidLevel: "gelSpidLevel",
     spNameQualifier: "gelNameIdSpNameQualifier",
+    logoutReturnUrl: "gelLogoutReturnUrl",
     enableCie: "gelEnableCie",
     enableCns: "gelEnableCns",
     cieOnly: "gelCieOnly",
@@ -94,6 +95,14 @@
       label: "NameID SPNameQualifier",
       helpText: "Valore opzionale da valorizzare in samlp:NameIDPolicy@SPNameQualifier.",
       placeholder: "es. https://sp.example.it"
+    },
+    {
+      type: "text",
+      id: GEL_KEYS.logoutReturnUrl,
+      section: FIELD_SECTION_GENERAL,
+      label: "GEL Logout Return URL",
+      helpText: "URL assoluto opzionale usato come RelayState di fallback nel logout verso GEL quando non sono presenti redirect URI applicative.",
+      placeholder: "es. https://app.example.it/post-logout"
     },
     {
       type: "textarea",
@@ -1193,6 +1202,7 @@
 
     selectValue(GEL_KEYS.spidLevel, readConfigValue(config, GEL_KEYS.spidLevel, DEFAULT_SPID_LEVEL));
     inputValue(GEL_KEYS.spNameQualifier, readConfigValue(config, GEL_KEYS.spNameQualifier, ""));
+    inputValue(GEL_KEYS.logoutReturnUrl, readConfigValue(config, GEL_KEYS.logoutReturnUrl, ""));
     maskPrivateKeyInput(readConfigValue(config, GEL_KEYS.signingPrivateKeyPem, ""));
     inputValue(GEL_KEYS.signingCertificatePem, readConfigValue(config, GEL_KEYS.signingCertificatePem, ""));
 
@@ -1212,6 +1222,7 @@
     values[STANDARD_SAML_ATTRIBUTE_SET_KEY] = attributeSet;
     values[GEL_KEYS.spidLevel] = valueOf(GEL_KEYS.spidLevel);
     values[GEL_KEYS.spNameQualifier] = valueOf(GEL_KEYS.spNameQualifier);
+    values[GEL_KEYS.logoutReturnUrl] = valueOf(GEL_KEYS.logoutReturnUrl);
     values[GEL_KEYS.signingPrivateKeyPem] = valueOf(GEL_KEYS.signingPrivateKeyPem);
     values[GEL_KEYS.signingCertificatePem] = valueOf(GEL_KEYS.signingCertificatePem);
     values[GEL_KEYS.customExtensions] = valueOf(GEL_KEYS.customExtensions);
