@@ -71,21 +71,13 @@ bin/kc.sh build
 bin/kc.sh start-dev
 ```
 
-4. Impostare il tema admin del realm su `gel`:
-   - `Realm Settings` -> `Themes` -> `Admin theme` -> `gel`
-   - Logout/Login in Admin Console dopo la modifica tema (oppure svuotare la cache del browser)
-
 ## Admin Console (GEL)
 
 Nota di compatibilita Keycloak `26.x`:
 
 - il tema `gel` eredita direttamente da `keycloak.v2`;
-- non viene piu' usato un override di `index.ftl`;
+- non viene più usato un override di `index.ftl`;
 - lo script admin serve solo ad aprire il form SAML nativo durante la creazione e salvare il provider come `gel-saml`.
-
-Con il tema `gel` attivo, quando apri:
-
-- `Identity Providers` -> provider `gel-saml` -> tab `Settings`
 
 Keycloak mostra i parametri GEL direttamente nel tab nativo `Settings`:
 
@@ -101,19 +93,29 @@ Keycloak mostra i parametri GEL direttamente nel tab nativo `Settings`:
 Comportamento firma AuthnRequest:
 - se `Private RSA Key (PEM)` e `Signing Certificate (PEM)` sono valorizzati entrambi, il provider `gel-saml` firma con questo materiale solo per quell'IdP;
 - se non sono valorizzati, utilizza la chiave RSA attiva del realm.
-- il campo `GEL Signing Private Key (PEM)` e' di tipo password/secret e non viene mostrato in chiaro dal form nativo.
+- il campo `GEL Signing Private Key (PEM)` è di tipo password/secret e non viene mostrato in chiaro dal form nativo.
 - il salvataggio usa il pulsante `Save` standard del tab `Settings`.
+
+Comportamento logout (SLO verso GEL):
+- il `RelayState` viene valorizzato con priorita:
+  1. `post_logout_redirect_uri` (logout da client OIDC, se presente)
+  2. `SAML_LOGOUT_RELAY_STATE` (logout da client SAML, se presente)
+  3. `GEL Logout Return URL` (campo opzionale di configurazione, usato come fallback applicativo)
+  4. fallback tecnico: `userSessionId`
+- vengono usati come `RelayState` applicativo solo valori validi come URL assolute `http/https`.
 
 ## Configurazione manuale da Admin Console
 
 1. `Identity Providers` -> `Add provider` -> selezionare `GEL SAML v2.0`.
 2. Configurare almeno:
-   - `Single Sign-On Service URL`
    - `IdP Entity ID`
    - `SP Entity ID (Issuer)`
    - `Validating X509 Certificates`
    - `Sign AuthnRequest` (tipicamente `ON`)
-3. Configurare se necessario campi GEL:
+3. In creazione `gel-saml`, i campi SAML vengono derivati automaticamente da `Identity provider entity ID`:
+   - `Single Sign-On service URL` = `{Identity provider entity ID}/SSOService`
+   - `Single logout service URL` = `{Identity provider entity ID}/Logout`
+4. Configurare se necessario campi GEL:
    - `GEL Attribute Set` (0..5)
    - `SPID Level` (`L2` o `L3`)
    - `NameID SPNameQualifier`

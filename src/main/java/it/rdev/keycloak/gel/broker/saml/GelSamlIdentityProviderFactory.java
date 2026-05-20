@@ -145,6 +145,13 @@ public class GelSamlIdentityProviderFactory extends SAMLIdentityProviderFactory 
                 ProviderConfigProperty.TEXT_TYPE,
                 null));
 
+        properties.add(new ProviderConfigProperty(
+                GelSamlIdentityProviderConfig.GEL_LOGOUT_RETURN_URL,
+                "GEL Logout Return URL",
+                "URL assoluto opzionale usato come valore di RelayState nel logout verso GEL quando non sono presenti redirect URI applicative.",
+                ProviderConfigProperty.STRING_TYPE,
+                null));
+
         CONFIG_PROPERTIES = Collections.unmodifiableList(properties);
     }
 

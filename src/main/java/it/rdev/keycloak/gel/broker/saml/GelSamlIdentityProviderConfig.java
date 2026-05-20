@@ -26,6 +26,7 @@ public class GelSamlIdentityProviderConfig extends SAMLIdentityProviderConfig {
     public static final String GEL_LOG_AUTHN_REQUEST = "gelLogAuthnRequest";
     public static final String GEL_SIGNING_PRIVATE_KEY_PEM = "gelSigningPrivateKeyPem";
     public static final String GEL_SIGNING_CERTIFICATE_PEM = "gelSigningCertificatePem";
+    public static final String GEL_LOGOUT_RETURN_URL = "gelLogoutReturnUrl";
     public static final String GEL_IDP_ENTITY_ID = "idpEntityId";
     public static final String GEL_IDP_SSO_URL = "singleSignOnServiceUrl";
     public static final String GEL_IDP_SLO_URL = "singleLogoutServiceUrl";
@@ -173,6 +174,17 @@ public class GelSamlIdentityProviderConfig extends SAMLIdentityProviderConfig {
 
     public void setGelSigningCertificatePem(String certificatePem) {
         putOrRemove(GEL_SIGNING_CERTIFICATE_PEM, certificatePem);
+    }
+
+    /**
+     * @return Optional absolute URL appended as {@code return=} on GEL logout endpoint.
+     */
+    public String getGelLogoutReturnUrl() {
+        return getConfig().get(GEL_LOGOUT_RETURN_URL);
+    }
+
+    public void setGelLogoutReturnUrl(String logoutReturnUrl) {
+        putOrRemove(GEL_LOGOUT_RETURN_URL, logoutReturnUrl);
     }
 
     private boolean readBoolean(String key) {

@@ -241,8 +241,6 @@
 
   function ensureSamlCreateInputs() {
     ensureInput("config." + GEL_KEYS.idpEntityId, "Identity provider entity ID");
-    ensureInput("config." + GEL_KEYS.idpSsoUrl, "Single Sign-On service URL");
-    ensureInput("config." + GEL_KEYS.idpSloUrl, "Single logout service URL");
   }
 
   function ensureInput(name, label) {
@@ -578,16 +576,8 @@
       readInputValue("config." + GEL_KEYS.idpEntityId),
       readInputValue(GEL_KEYS.idpEntityId)
     );
-    var idpSsoUrl = firstNonNull(
-      trimToNull(config[GEL_KEYS.idpSsoUrl]),
-      readInputValue("config." + GEL_KEYS.idpSsoUrl),
-      readInputValue(GEL_KEYS.idpSsoUrl)
-    );
-    var idpSloUrl = firstNonNull(
-      trimToNull(config[GEL_KEYS.idpSloUrl]),
-      readInputValue("config." + GEL_KEYS.idpSloUrl),
-      readInputValue(GEL_KEYS.idpSloUrl)
-    );
+    var idpSsoUrl = deriveIdpEndpoint(idpEntityId, "SSOService");
+    var idpSloUrl = deriveIdpEndpoint(idpEntityId, "Logout");
 
     if (!gelAttributeSet && attributeSet) {
       config[GEL_KEYS.attributeSet] = attributeSet;
@@ -663,6 +653,15 @@
     }
 
     return null;
+  }
+
+  function deriveIdpEndpoint(baseUrl, suffix) {
+    var normalizedBase = trimToNull(baseUrl);
+    if (!normalizedBase || !suffix) {
+      return null;
+    }
+
+    return normalizedBase.replace(/\/+$/, "") + "/" + suffix;
   }
 
   function promoteFlatConfigEntries(payload) {
