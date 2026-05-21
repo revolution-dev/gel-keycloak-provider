@@ -248,12 +248,35 @@ public class GelSamlIdentityProvider extends SAMLIdentityProvider {
             }
 
             JaxrsSAML2BindingBuilder binding = buildLogoutBindingForGel(session, userSession, realm);
+            invalidateLocalSessionBeforeFederatedLogout(session, realm, userSession);
             if (config.isPostBindingLogout()) {
                 return binding.postBinding(SAML2Request.convert(logoutRequest)).request(logoutDestination);
             }
             return binding.redirectBinding(SAML2Request.convert(logoutRequest)).request(logoutDestination);
         } catch (Exception exception) {
             throw new RuntimeException(exception);
+        }
+    }
+
+    /**
+     * Invalidates the local Keycloak user session before redirecting the browser to GEL for federated logout.
+     *
+     * <p>This makes the local logout idempotent from Keycloak perspective: if GEL callback is replayed or delayed,
+     * the session is already closed and cannot be reused.</p>
+     */
+    private void invalidateLocalSessionBeforeFederatedLogout(KeycloakSession session,
+                                                             RealmModel realm,
+                                                             UserSessionModel userSession) {
+        if (userSession == null) {
+            return;
+        }
+
+        try {
+            session.sessions().removeUserSession(realm, userSession);
+        } catch (RuntimeException exception) {
+            logger.warnf(exception,
+                    "Unable to invalidate local Keycloak session '%s' before federated GEL logout.",
+                    userSession.getId());
         }
     }
 
