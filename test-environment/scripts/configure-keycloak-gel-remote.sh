@@ -350,49 +350,16 @@ destination.write_text(json.dumps(payload, indent=2))
 PY
 }
 
-write_key_provider_payload() {
-  local destination="$1"
-  local realm_id="$2"
-  local component_id="${3:-}"
-  local private_key_file="${TMP_DIR}/private-key.pem"
-  local certificate_file="${TMP_DIR}/client-certificate.pem"
-
-  extract_private_key > "${private_key_file}"
-  extract_client_certificate > "${certificate_file}"
-
-  python3 - <<'PY' "${destination}" "${realm_id}" "${KEY_PROVIDER_NAME}" "${KEY_PRIORITY}" "${component_id}" "${private_key_file}" "${certificate_file}"
-import json
-import pathlib
-import sys
-
-destination = pathlib.Path(sys.argv[1])
-payload = {
-    "name": sys.argv[3],
-    "providerId": "rsa",
-    "providerType": "org.keycloak.keys.KeyProvider",
-    "parentId": sys.argv[2],
-    "config": {
-        "priority": [sys.argv[4]],
-        "enabled": ["true"],
-        "active": ["true"],
-        "algorithm": ["RS256"],
-        "keyUse": ["SIG"],
-        "privateKey": [pathlib.Path(sys.argv[6]).read_text()],
-        "certificate": [pathlib.Path(sys.argv[7]).read_text()],
-    },
-}
-if sys.argv[5]:
-    payload["id"] = sys.argv[5]
-destination.write_text(json.dumps(payload, indent=2))
-PY
-}
-
 write_idp_payload() {
   local destination="$1"
   local metadata_certs_file="${TMP_DIR}/metadata-certs.pem"
+  local private_key_file="${TMP_DIR}/private-key.pem"
+  local certificate_file="${TMP_DIR}/client-certificate.pem"
   extract_metadata_certificates > "${metadata_certs_file}"
+  extract_private_key > "${private_key_file}"
+  extract_client_certificate > "${certificate_file}"
 
-  python3 - <<'PY' "${destination}" "${IDP_ALIAS}" "${IDP_DISPLAY_NAME}" "${metadata_certs_file}"
+  python3 - <<'PY' "${destination}" "${IDP_ALIAS}" "${IDP_DISPLAY_NAME}" "${metadata_certs_file}" "${private_key_file}" "${certificate_file}"
 import json
 import os
 import pathlib
@@ -405,6 +372,8 @@ destination = pathlib.Path(sys.argv[1])
 alias = sys.argv[2]
 display_name = sys.argv[3]
 metadata_certs = pathlib.Path(sys.argv[4]).read_text()
+private_key_pem = pathlib.Path(sys.argv[5]).read_text()
+certificate_pem = pathlib.Path(sys.argv[6]).read_text()
 
 payload = {
     "alias": alias,
@@ -437,6 +406,8 @@ payload = {
         "gelCustomExtensions": os.environ["CUSTOM_EXTENSIONS"],
         "gelLogAuthnRequest": normalize_bool(os.environ["LOG_AUTHN_REQUEST"]),
         "gelLogoutReturnUrl": os.environ["GEL_LOGOUT_RETURN_URL"],
+        "gelSigningPrivateKeyPem": private_key_pem,
+        "gelSigningCertificatePem": certificate_pem,
         "wantAuthnRequestsSigned": "true",
         "validateSignature": "true",
         "postBindingAuthnRequest": "true",
@@ -617,7 +588,7 @@ export GEL_LOGOUT_RETURN_URL
 REALM_RESPONSE="${TMP_DIR}/realm.json"
 REALM_HTTP_CODE="$(api_call GET "/admin/realms/${REALM}" "" "${REALM_RESPONSE}")"
 if [[ "${REALM_HTTP_CODE}" == "404" ]]; then
-  echo "[1/5] Create realm ${REALM}"
+  echo "[1/6] Create realm ${REALM}"
   REALM_PAYLOAD="${TMP_DIR}/realm-create.json"
   write_realm_payload "${REALM_PAYLOAD}"
   REALM_CREATE_RESPONSE="${TMP_DIR}/realm-create-response.json"
@@ -640,7 +611,7 @@ print(payload.get("id", sys.argv[2]))
 PY
 )"
 
-echo "[2/7] Apply admin theme (${ADMIN_THEME}) to realm ${ADMIN_THEME_REALM}"
+echo "[2/6] Apply admin theme (${ADMIN_THEME}) to realm ${ADMIN_THEME_REALM}"
 THEME_REALM_READ_RESPONSE="${TMP_DIR}/theme-realm-read.json"
 THEME_REALM_READ_CODE="$(api_call GET "/admin/realms/${ADMIN_THEME_REALM}" "" "${THEME_REALM_READ_RESPONSE}")"
 assert_http_ok "${THEME_REALM_READ_CODE}" "${THEME_REALM_READ_RESPONSE}" "read admin theme realm"
@@ -650,14 +621,14 @@ THEME_REALM_UPDATE_RESPONSE="${TMP_DIR}/theme-realm-update-response.json"
 THEME_REALM_UPDATE_CODE="$(api_call PUT "/admin/realms/${ADMIN_THEME_REALM}" "${THEME_REALM_UPDATE_PAYLOAD}" "${THEME_REALM_UPDATE_RESPONSE}")"
 assert_http_ok "${THEME_REALM_UPDATE_CODE}" "${THEME_REALM_UPDATE_RESPONSE}" "update admin theme realm"
 
-echo "[3/7] Update realm ${REALM} settings"
+echo "[3/6] Update realm ${REALM} settings"
 REALM_UPDATE_PAYLOAD="${TMP_DIR}/realm-update.json"
 write_realm_update_payload "${REALM_READ_RESPONSE}" "${REALM_UPDATE_PAYLOAD}"
 REALM_UPDATE_RESPONSE="${TMP_DIR}/realm-update-response.json"
 REALM_UPDATE_CODE="$(api_call PUT "/admin/realms/${REALM}" "${REALM_UPDATE_PAYLOAD}" "${REALM_UPDATE_RESPONSE}")"
 assert_http_ok "${REALM_UPDATE_CODE}" "${REALM_UPDATE_RESPONSE}" "update realm"
 
-echo "[4/7] Create or update client ${CLIENT_ID}"
+echo "[4/6] Create or update client ${CLIENT_ID}"
 CLIENTS_RESPONSE="${TMP_DIR}/clients.json"
 CLIENTS_CODE="$(api_call GET "/admin/realms/${REALM}/clients?clientId=${CLIENT_ID}" "" "${CLIENTS_RESPONSE}")"
 assert_http_ok "${CLIENTS_CODE}" "${CLIENTS_RESPONSE}" "query clients"
@@ -674,24 +645,7 @@ else
   assert_http_ok "${CLIENT_CREATE_CODE}" "${CLIENT_CREATE_RESPONSE}" "create client"
 fi
 
-echo "[5/7] Create or update realm key provider ${KEY_PROVIDER_NAME}"
-COMPONENTS_RESPONSE="${TMP_DIR}/components.json"
-COMPONENTS_CODE="$(api_call GET "/admin/realms/${REALM}/components?parent=${REALM_ID}&type=org.keycloak.keys.KeyProvider" "" "${COMPONENTS_RESPONSE}")"
-assert_http_ok "${COMPONENTS_CODE}" "${COMPONENTS_RESPONSE}" "query key providers"
-KEY_COMPONENT_ID="$(find_first_id_by_field "${COMPONENTS_RESPONSE}" "name" "${KEY_PROVIDER_NAME}")"
-KEY_PROVIDER_PAYLOAD="${TMP_DIR}/key-provider.json"
-write_key_provider_payload "${KEY_PROVIDER_PAYLOAD}" "${REALM_ID}" "${KEY_COMPONENT_ID}"
-if [[ -n "${KEY_COMPONENT_ID}" ]]; then
-  KEY_UPDATE_RESPONSE="${TMP_DIR}/key-provider-update.json"
-  KEY_UPDATE_CODE="$(api_call PUT "/admin/realms/${REALM}/components/${KEY_COMPONENT_ID}" "${KEY_PROVIDER_PAYLOAD}" "${KEY_UPDATE_RESPONSE}")"
-  assert_http_ok "${KEY_UPDATE_CODE}" "${KEY_UPDATE_RESPONSE}" "update key provider"
-else
-  KEY_CREATE_RESPONSE="${TMP_DIR}/key-provider-create.json"
-  KEY_CREATE_CODE="$(api_call POST "/admin/realms/${REALM}/components" "${KEY_PROVIDER_PAYLOAD}" "${KEY_CREATE_RESPONSE}")"
-  assert_http_ok "${KEY_CREATE_CODE}" "${KEY_CREATE_RESPONSE}" "create key provider"
-fi
-
-echo "[6/7] Create or update identity provider ${IDP_ALIAS} (providerId=gel-saml)"
+echo "[5/6] Create or update identity provider ${IDP_ALIAS} (providerId=gel-saml)"
 IDP_PAYLOAD="${TMP_DIR}/identity-provider.json"
 write_idp_payload "${IDP_PAYLOAD}"
 IDP_RESPONSE="${TMP_DIR}/identity-provider-get.json"
@@ -707,7 +661,7 @@ else
   assert_http_ok "${IDP_UPDATE_CODE}" "${IDP_UPDATE_RESPONSE}" "update identity provider"
 fi
 
-echo "[7/7] Create or update GEL broker mappers"
+echo "[6/6] Create or update GEL broker mappers"
 
 USERNAME_MAPPER_PAYLOAD="${TMP_DIR}/mapper-username.json"
 write_idp_username_mapper_payload "${USERNAME_MAPPER_PAYLOAD}" "gel-username-from-${USERNAME_SOURCE_ATTRIBUTE}" "${USERNAME_SOURCE_ATTRIBUTE}"
